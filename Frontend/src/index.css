@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: "Nunito", system-ui, sans-serif;
+  }
+  body {
+    @apply text-gray-800;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply px-6 py-3 rounded-full font-semibold transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-opacity-50 text-center;
+  }
+  .btn-primary {
+    @apply btn bg-primary-500 text-white hover:bg-primary-600 focus:ring-primary-300;
+  }
+  .btn-secondary {
+    @apply btn bg-secondary-400 text-gray-800 hover:bg-secondary-500 focus:ring-secondary-300;
+  }
+  .btn-accent {
+    @apply btn bg-accent-500 text-white hover:bg-accent-600 focus:ring-accent-300;
+  }
+  .btn-success {
+    @apply btn bg-success-500 text-white hover:bg-success-600 focus:ring-success-300;
+  }
+  .btn-lg {
+    @apply text-xl px-8 py-4;
+  }
+  .btn-sm {
+    @apply text-sm px-4 py-2;
+  }
+  .card {
+    @apply bg-white rounded-3xl shadow-lg p-6;
+  }
+  .input {
+    @apply w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:ring-opacity-50 text-lg;
+  }
+}
