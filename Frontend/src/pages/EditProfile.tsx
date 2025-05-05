@@ -16,7 +16,7 @@ const EditProfile: React.FC = () => {
     age: 8,
     seed: '',
   });
-
+  
   useEffect(() => {
     if (!isParentMode) {
       navigate('/parent-dashboard');
