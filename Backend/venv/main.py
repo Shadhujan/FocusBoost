@@ -1,10 +1,24 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.middleware.cors import CORSMiddleware
 from firebase_config import db, auth
 from pydantic import BaseModel
 import hashlib
 
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
+@app.get("/")
+async def home():
+    return {"message": "Hello, FocusBoost Backend!"}
 
 # Security Scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -46,6 +60,22 @@ async def register(user: User):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.post("/login")
+async def login(user: User):
+    try:
+        # Get user by email
+        user_record = auth.get_user_by_email(user.email)
+        
+        # Create custom token
+        custom_token = auth.create_custom_token(user_record.uid)
+        
+        return {
+            "token": custom_token.decode(),
+            "uid": user_record.uid
+        }
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
 @app.post("/start_session")
 async def start_session(session: SessionStart, user_id: str = Depends(get_current_user)):
     try:
@@ -63,3 +93,8 @@ async def start_session(session: SessionStart, user_id: str = Depends(get_curren
         return {"session_id": session_ref.id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+if __name__ == '__main__':
+    import uvicorn
+    uvicorn.run(app, host='127.0.0.1', port=8000) 
