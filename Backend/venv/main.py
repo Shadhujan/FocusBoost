@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends
-from fastapi.security import OAuth2PasswordBearer
+# from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from firebase_config import db, auth
 from pydantic import BaseModel
@@ -21,7 +22,8 @@ async def home():
     return {"message": "Hello, FocusBoost Backend!"}
 
 # Security Scheme
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+# oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = HTTPBearer()
 
 # Pydantic Models
 class User(BaseModel):
@@ -32,7 +34,9 @@ class SessionStart(BaseModel):
     child_id: str
 
 # Helper Functions
-def get_current_user(token: str = Depends(oauth2_scheme)):
+# def get_current_user(token: str = Depends(oauth2_scheme)):
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(oauth2_scheme)):
+    token = credentials.credentials
     try:
         decoded_token = auth.verify_id_token(token)
         return decoded_token["uid"]
