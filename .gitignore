@@ -28,6 +28,7 @@ ENV/
 env.bak/
 venv.bak/
 .python-version
+.serviceAccountKey.json
 
 # Node
 node_modules/
