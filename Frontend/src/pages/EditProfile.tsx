@@ -125,7 +125,7 @@ const EditProfile: React.FC = () => {
                     value={profile.age}
                     onChange={(e) => setProfile({...profile, age: parseInt(e.target.value)})}
                   >
-                    {[6, 7, 8, 9, 10, 11, 12].map(age => (
+                    {[8, 9, 10].map(age => (
                       <option key={age} value={age}>{age} years old</option>
                     ))}
                   </select>
