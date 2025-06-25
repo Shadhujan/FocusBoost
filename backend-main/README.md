@@ -2,6 +2,31 @@
 
 This is the backend API for the project.
 
+# Creating and Activating a Python Virtual Environment
+
+1. Step 1: Create the Virtual Environment
+
+```bash
+python -m venv venv_name
+```
+
+2. Step 2: Activate the Virtual Environment
+
+```bash
+venv_name\Scripts\activate
+```
+
+3.  Step 3: Confirm Activation
+#### You should see the environment name in your terminal prompt like this:
+```bash
+(venv_name) your-user-name$
+```
+
+4.  Step 4: Deactivate When Done
+```bash
+deactivate
+```
+
 ## Setup
 
 1. Install dependencies:
