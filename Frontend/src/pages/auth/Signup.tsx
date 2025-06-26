@@ -19,6 +19,7 @@ const Signup = () => {
     confirmPassword: ''
   });
 
+
   const validatePassword = () => {
     if (formData.password.length < 8) {
       return 'Password must be at least 8 characters long';
@@ -30,38 +31,56 @@ const Signup = () => {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    
-    const passwordError = validatePassword();
-    if (passwordError) {
-      setError(passwordError);
-      return;
-    }
+  e.preventDefault();
+  setError(null);
 
-    setLoading(true);
+  // client-side password check...
+  const passwordError = validatePassword();
+  if (passwordError) {
+    setError(passwordError);
+    return;
+  }
 
+  setLoading(true);
+  try {
+  const res = await fetch("http://localhost:8000/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fullName: formData.fullName,
+      email: formData.email,
+      password: formData.password,
+      confirmPassword: formData.confirmPassword
+    }),
+  });
+
+  if (!res.ok) {
+    console.error("Status:", res.status, res.statusText);
+    // Try to parse JSON; if that fails, fallback to text
+    let body: any;
     try {
-      const { user } = await createUserWithEmailAndPassword(
-        auth,
-        formData.email,
-        formData.password
-      );
-
-      await updateProfile(user, {
-        displayName: formData.fullName
-      });
-
-      setSuccess(true);
-      setTimeout(() => {
-        navigate('/auth/login');
-      }, 3000);
-    } catch (error: any) {
-      setError(error.message);
-    } finally {
-      setLoading(false);
+      body = await res.json();
+      console.error("Response JSON:", body);
+    } catch {
+      body = await res.text();
+      console.error("Response text:", body);
     }
-  };
+    throw new Error(body.detail || body || res.statusText);
+  }
+  // const data = await res.json();
+  setSuccess(true);
+  setTimeout(() =>
+    navigate('/auth/login'), 3000); // Redirect after 3 seconds
+
+  // on success...
+} catch (e: any) {
+  console.error("Signup error:", e);
+  setError(e.message);
+} finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-50 to-indigo-50 flex flex-col">

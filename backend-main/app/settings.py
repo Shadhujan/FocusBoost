@@ -1,6 +1,8 @@
 from pydantic_settings import BaseSettings
+from pydantic import AnyUrl
 from functools import lru_cache
 from typing import Optional
+from typing import List
 import json
 import os
 
@@ -10,7 +12,12 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Shadujan Project"
     
     # CORS Configuration
-    BACKEND_CORS_ORIGINS: list = ["*"]
+    BACKEND_CORS_ORIGINS: List = ["http://localhost:5173"]
+
+    class Config:
+        # point at the .env one level up
+        env_file = os.path.join(os.path.dirname(__file__), "..", ".env")
+        case_sensitive = True
 
     # Firebase Configuration
     FIREBASE_PROJECT_ID: str = ""

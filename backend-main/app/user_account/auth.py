@@ -19,11 +19,11 @@ async def register_user(user_data: UserRegister) -> UserResponse:
             )
         
         # Check if terms are agreed
-        if not user_data.agree_to_terms:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="You must agree to the terms and conditions"
-            )
+        # if not user_data.agree_to_terms:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_400_BAD_REQUEST,
+        #         detail="You must agree to the terms and conditions"
+        #     )
 
         # Create user in Firebase
         user = auth.create_user(
@@ -33,18 +33,18 @@ async def register_user(user_data: UserRegister) -> UserResponse:
         )
 
         # Create custom claims for additional user data
-        auth.set_custom_user_claims(
-            user.uid,
-            {
-                "country": user_data.country
-            }
-        )
+        # auth.set_custom_user_claims(
+        #     user.uid,
+        #     {
+        #         "country": user_data.country
+        #     }
+        # )
 
         return UserResponse(
             id=user.uid,
             full_name=user_data.full_name,
             email=user_data.email,
-            country=user_data.country
+            # country=user_data.country
         )
 
     except auth.EmailAlreadyExistsError:
