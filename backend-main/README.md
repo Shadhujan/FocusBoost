@@ -27,7 +27,11 @@ venv_name\Scripts\activate
 deactivate
 ```
 
-## Setup
+# Creating and Activating Anaconda environment
+1. conda env list 
+2. conda acivate <environment name>
+
+# Setup
 
 1. Install dependencies:
 ```bash
@@ -41,7 +45,7 @@ python -m app.main
 Fastapi dev app/main.py
 ```
 
-## Project Structure
+# Project Structure
 
 - `app/` - Main application code
   - `main.py` - Application entry point

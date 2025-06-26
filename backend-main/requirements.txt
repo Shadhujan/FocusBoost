@@ -1,4 +1,5 @@
-fastapi
+fastapi 
+fastapi[all] 
 uvicorn
 firebase-admin
 python-dotenv

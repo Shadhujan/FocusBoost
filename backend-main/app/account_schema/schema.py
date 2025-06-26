@@ -6,7 +6,7 @@ class UserRegister(BaseModel):
     email: EmailStr
     password: constr(min_length=6)
     confirm_password: str
-    country: str
+    country: Optional[str] = None
     agree_to_terms: bool
 
 class UserLogin(BaseModel):
