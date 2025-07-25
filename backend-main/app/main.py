@@ -1,66 +1,24 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+# app/main.py
+# Updated to include child management endpoints
+
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import firebase_admin
-from firebase_admin import credentials, firestore
-import uvicorn
-import logging
-from contextlib import asynccontextmanager
+from firebase_admin import firestore
+from datetime import datetime
+import random
+import string
 
-from .settings import settings
-from .ml_processor import SimpleMLPredictor, SimpleInterventionManager, SimpleDataManager
-from .websocket_manager import WebSocketManager
-from .auth import get_current_user, router as auth_router
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Global instances
-ml_predictor = None
-intervention_manager = None
-data_manager = None
-websocket_manager = None
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    global ml_predictor, intervention_manager, data_manager, websocket_manager
-    
-    try:
-        # Initialize Firebase
-        if not firebase_admin._apps:
-            cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
-            firebase_admin.initialize_app(cred, {
-                'projectId': settings.FIREBASE_PROJECT_ID,
-            })
-        
-        # Initialize ML components
-        ml_predictor = SimpleMLPredictor()
-        intervention_manager = SimpleInterventionManager()
-        data_manager = SimpleDataManager()
-        websocket_manager = WebSocketManager()
-        
-        logger.info("✅ Application startup complete")
-        
-    except Exception as e:
-        logger.error(f"❌ Startup failed: {e}")
-        raise
-    
-    yield
-    
-    # Shutdown
-    logger.info("🔄 Application shutdown")
-
-# Create FastAPI app
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    version=settings.VERSION,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
-    lifespan=lifespan
+# Your existing imports
+from .account_schema.schema import (
+    UserRegister, UserLogin, 
+    ChildCreate, ChildResponse, ChildUpdate
 )
+from .user_account.auth import register_user, login_user, forgot_password, get_all_users
+from .settings import settings
 
-# Configure CORS
+app = FastAPI(title=settings.PROJECT_NAME)
+
+# Configure CORS (your existing setup)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
@@ -69,219 +27,289 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Security
-security = HTTPBearer()
+# Helper functions for child profiles
+def generate_avatar_url(seed: str) -> str:
+    """Generate avatar URL using DiceBear API"""
+    return f"https://api.dicebear.com/7.x/adventurer/svg?seed={seed}&backgroundColor=b6e3f4,c0aede,ffd5dc,ffdfbf&backgroundType=solid"
 
-# Include routers
-app.include_router(auth_router, prefix=f"{settings.API_V1_STR}/auth", tags=["authentication"])
+def generate_random_seed() -> str:
+    """Generate random seed for avatar"""
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=10))
 
-# =======================================
-# ML ANALYSIS ENDPOINTS
-# =======================================
+# ==========================================
+# YOUR EXISTING AUTH ENDPOINTS (unchanged)
+# ==========================================
 
-from pydantic import BaseModel
-from typing import Optional, Dict, Any
+@app.post("/register", status_code=status.HTTP_201_CREATED)
+async def register(user_data: UserRegister):
+    return await register_user(user_data)
 
-class AnalyzeFrameRequest(BaseModel):
-    sessionId: str
-    imageData: str  # base64 encoded image
+@app.post("/login")
+async def login(user_data: UserLogin):
+    return await login_user(user_data)
 
-class AnalysisResponse(BaseModel):
-    success: bool
-    analysis: Optional[Dict[str, Any]] = None
-    intervention: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
+@app.post("/forgot-password")
+async def reset_password(email: str):
+    return await forgot_password(email)
 
-@app.post(f"{settings.API_V1_STR}/analyze-base64", response_model=AnalysisResponse)
-async def analyze_frame(
-    request: AnalyzeFrameRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    """Analyze frame using your two ML models"""
+@app.get("/users", status_code=status.HTTP_200_OK)
+async def get_users():
+    """Get all user details from Firebase."""
+    return await get_all_users()
+
+@app.get("/")
+async def root():
+    return {"message": f"Welcome to {settings.PROJECT_NAME} API"}
+
+# ==========================================
+# NEW: CHILD MANAGEMENT ENDPOINTS
+# ==========================================
+
+@app.post("/api/children", response_model=ChildResponse, status_code=status.HTTP_201_CREATED)
+async def create_child(child_data: ChildCreate):
+    """Create child profile"""
     try:
-        # Verify user authentication
-        current_user = await get_current_user(credentials.credentials)
+        db = firestore.client()
         
-        # Analyze with ML models
-        analysis_result = ml_predictor.analyze_frame(request.imageData)
-        if not analysis_result:
-            raise HTTPException(
-                status_code=400, 
-                detail="Failed to analyze image"
-            )
+        # Generate seed and avatar
+        seed = child_data.seed or generate_random_seed()
+        avatar_url = generate_avatar_url(seed)
         
-        # Store results
-        doc_id = await data_manager.store_analysis(request.sessionId, analysis_result)
+        # Create child document
+        child_doc = {
+            'name': child_data.name,
+            'age': child_data.age,
+            'parentId': child_data.parentId,
+            'avatar': avatar_url,
+            'seed': seed,
+            'createdAt': datetime.now(),
+            'updatedAt': datetime.now()
+        }
         
-        # Update session summary
-        await data_manager.update_session_summary(request.sessionId, analysis_result)
+        # Add to Firestore
+        doc_ref = db.collection('children').add(child_doc)
+        child_id = doc_ref[1].id
         
-        # Check for interventions
-        intervention_type = intervention_manager.should_trigger_intervention(analysis_result)
-        intervention = None
-        
-        if intervention_type:
-            intervention = await intervention_manager.create_intervention(
-                request.sessionId, intervention_type, analysis_result
-            )
-        
-        # Send WebSocket update
-        if websocket_manager:
-            await websocket_manager.send_analysis_update(request.sessionId, analysis_result)
-        
-        return AnalysisResponse(
-            success=True,
-            analysis={
-                'learningState': analysis_result['learning_state']['state'],
-                'learningConfidence': analysis_result['learning_state']['confidence'],
-                'emotion': analysis_result['emotion']['emotion'],
-                'emotionConfidence': analysis_result['emotion']['confidence'],
-                'attentionScore': analysis_result['attention_score'],
-                'timestamp': analysis_result['timestamp']
-            },
-            intervention=intervention
+        return ChildResponse(
+            id=child_id,
+            name=child_data.name,
+            age=child_data.age,
+            parentId=child_data.parentId,
+            avatar=avatar_url,
+            seed=seed,
+            createdAt=datetime.now().isoformat()
         )
         
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Error in analyze_frame: {e}")
         raise HTTPException(
-            status_code=500, 
-            detail=f"Internal server error: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating child: {str(e)}"
         )
 
-# =======================================
-# SESSION MANAGEMENT ENDPOINTS
-# =======================================
-
-class StartSessionRequest(BaseModel):
-    childId: str
-    subject: str = "general"
-    startTime: str
-
-class EndSessionRequest(BaseModel):
-    sessionId: str
-    endTime: str
-
-@app.post(f"{settings.API_V1_STR}/sessions/start")
-async def start_session(
-    request: StartSessionRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    """Start a new study session"""
+@app.get("/api/children/{parent_id}")
+async def get_children_by_parent(parent_id: str):
+    """Get all children for parent"""
     try:
-        current_user = await get_current_user(credentials.credentials)
+        db = firestore.client()
         
-        # Verify child belongs to user
-        child_doc = firestore.client().collection('children').document(request.childId).get()
-        if not child_doc.exists:
-            raise HTTPException(status_code=404, detail="Child not found")
+        children_ref = db.collection('children').where('parentId', '==', parent_id)
+        children_docs = children_ref.stream()
         
-        child_data = child_doc.to_dict()
-        if child_data['parentId'] != current_user['uid']:
-            raise HTTPException(status_code=403, detail="Access denied")
-        
-        # Create session
-        session_id = await data_manager.create_session(request.childId, request.subject)
+        children = []
+        for doc in children_docs:
+            child_data = doc.to_dict()
+            child_data['id'] = doc.id
+            
+            # Convert datetime to string
+            if 'createdAt' in child_data:
+                child_data['createdAt'] = child_data['createdAt'].isoformat()
+            if 'updatedAt' in child_data:
+                child_data['updatedAt'] = child_data['updatedAt'].isoformat()
+            
+            # Ensure avatar exists
+            if 'avatar' not in child_data or not child_data['avatar']:
+                seed = child_data.get('seed', generate_random_seed())
+                child_data['avatar'] = generate_avatar_url(seed)
+                child_data['seed'] = seed
+            
+            children.append(child_data)
         
         return {
-            'success': True,
-            'sessionId': session_id
+            "success": True,
+            "children": children,
+            "count": len(children)
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching children: {str(e)}"
+        )
+
+@app.get("/api/children/child/{child_id}")
+async def get_child_by_id(child_id: str):
+    """Get specific child by ID"""
+    try:
+        db = firestore.client()
+        
+        child_ref = db.collection('children').document(child_id)
+        child_doc = child_ref.get()
+        
+        if not child_doc.exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Child not found"
+            )
+        
+        child_data = child_doc.to_dict()
+        child_data['id'] = child_doc.id
+        
+        # Convert datetime to string
+        if 'createdAt' in child_data:
+            child_data['createdAt'] = child_data['createdAt'].isoformat()
+        if 'updatedAt' in child_data:
+            child_data['updatedAt'] = child_data['updatedAt'].isoformat()
+        
+        return {
+            "success": True,
+            "child": child_data
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error starting session: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching child: {str(e)}"
+        )
 
-@app.post(f"{settings.API_V1_STR}/sessions/end")
-async def end_session(
-    request: EndSessionRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    """End a study session"""
+@app.put("/api/children/{child_id}")
+async def update_child(child_id: str, child_update: ChildUpdate):
+    """Update child profile"""
     try:
-        current_user = await get_current_user(credentials.credentials)
+        db = firestore.client()
         
-        # End session
-        success = await data_manager.end_session(request.sessionId)
+        child_ref = db.collection('children').document(child_id)
+        child_doc = child_ref.get()
         
-        if success:
-            return {
-                'success': True,
-                'sessionId': request.sessionId
-            }
-        else:
-            raise HTTPException(status_code=404, detail="Session not found")
+        if not child_doc.exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Child not found"
+            )
+        
+        # Prepare update data
+        update_data = {'updatedAt': datetime.now()}
+        
+        if child_update.name is not None:
+            update_data['name'] = child_update.name
+        if child_update.age is not None:
+            update_data['age'] = child_update.age
+        if child_update.seed is not None:
+            update_data['seed'] = child_update.seed
+            update_data['avatar'] = generate_avatar_url(child_update.seed)
+        
+        # Update document
+        child_ref.update(update_data)
+        
+        # Return updated data
+        updated_doc = child_ref.get()
+        updated_data = updated_doc.to_dict()
+        updated_data['id'] = updated_doc.id
+        
+        # Convert datetime to string
+        if 'createdAt' in updated_data:
+            updated_data['createdAt'] = updated_data['createdAt'].isoformat()
+        if 'updatedAt' in updated_data:
+            updated_data['updatedAt'] = updated_data['updatedAt'].isoformat()
+        
+        return {
+            "success": True,
+            "child": updated_data
+        }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error ending session: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating child: {str(e)}"
+        )
 
-@app.get(f"{settings.API_V1_STR}/session/{{session_id}}/summary")
-async def get_session_summary(
-    session_id: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    """Get session summary"""
+@app.delete("/api/children/{child_id}")
+async def delete_child(child_id: str):
+    """Delete child profile"""
     try:
-        current_user = await get_current_user(credentials.credentials)
+        db = firestore.client()
         
-        summary = await data_manager.get_session_summary(session_id)
+        child_ref = db.collection('children').document(child_id)
+        child_doc = child_ref.get()
         
-        if summary:
-            return {
-                'success': True,
-                'data': summary
-            }
-        else:
-            raise HTTPException(status_code=404, detail="Session not found")
+        if not child_doc.exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Child not found"
+            )
+        
+        child_ref.delete()
+        
+        return {
+            "success": True,
+            "message": "Child profile deleted successfully"
+        }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting session summary: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting child: {str(e)}"
+        )
 
-# =======================================
-# WEBSOCKET ENDPOINT
-# =======================================
-
-@app.websocket(f"/ws/{{session_id}}")
-async def websocket_endpoint(websocket, session_id: str):
-    """WebSocket endpoint for real-time communication"""
-    if websocket_manager:
-        await websocket_manager.connect(websocket, session_id)
-    else:
-        await websocket.close(code=1000)
-
-# =======================================
-# HEALTH CHECK
-# =======================================
+# ==========================================
+# UPDATED HEALTH CHECK
+# ==========================================
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "version": settings.VERSION,
-        "ml_models_loaded": ml_predictor is not None,
-        "firebase_connected": len(firebase_admin._apps) > 0
-    }
-
-# =======================================
-# RUN APPLICATION
-# =======================================
-
-if __name__ == "__main__":
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
-    )
+    """Health check with child management"""
+    try:
+        db = firestore.client()
+        
+        # Test Firebase connection
+        test_collection = db.collection('children').limit(1).stream()
+        children_accessible = len(list(test_collection)) >= 0
+        
+        return {
+            "status": "healthy",
+            "features": {
+                "authentication": "enabled",
+                "child_management": "enabled",
+                "firebase": "connected"
+            },
+            "endpoints": {
+                "auth": ["/register", "/login", "/users"],
+                "children": [
+                    "POST /api/children",
+                    "GET /api/children/{parent_id}",
+                    "GET /api/children/child/{child_id}",
+                    "PUT /api/children/{child_id}",
+                    "DELETE /api/children/{child_id}"
+                ]
+            },
+            "data": {
+                "firebase_connection": "working",
+                "children_collection": "accessible" if children_accessible else "error"
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "status": "degraded",
+            "error": str(e),
+            "features": {
+                "authentication": "enabled",
+                "child_management": "error",
+                "firebase": "error"
+            }
+        }

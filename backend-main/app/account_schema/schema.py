@@ -1,16 +1,19 @@
-from pydantic import BaseModel, EmailStr, constr, Field
-from typing import Optional
+# app/account_schema/schema.py
+# ADD these child schemas to your existing file
 
+from pydantic import BaseModel, EmailStr, constr, Field
+from typing import Optional, Dict
+
+# Your existing auth schemas (keep these unchanged)
 class UserRegister(BaseModel):
-    # these field names and aliases now exactly match your front-end keys
-    full_name: str                 = Field(..., alias="fullName")
-    email:      EmailStr
-    password:   constr(min_length=8)
-    confirm_password: str         = Field(..., alias="confirmPassword")
+    full_name: str = Field(..., alias="fullName")
+    email: EmailStr
+    password: constr(min_length=8)
+    confirm_password: str = Field(..., alias="confirmPassword")
 
     class Config:
-        populate_by_name = True        # ← was allow_population_by_field_name
-        str_strip_whitespace = True    # ← was anystr_strip_whitespace
+        populate_by_name = True
+        str_strip_whitespace = True
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -21,4 +24,24 @@ class UserResponse(BaseModel):
     id: str
     full_name: str
     email: EmailStr
-    #country: str 
+
+# NEW: Add these child schemas
+class ChildCreate(BaseModel):
+    name: str
+    age: int
+    parentId: str
+    seed: Optional[str] = None
+
+class ChildResponse(BaseModel):
+    id: str
+    name: str
+    age: int
+    parentId: str
+    avatar: str
+    seed: str
+    createdAt: str
+
+class ChildUpdate(BaseModel):
+    name: Optional[str] = None
+    age: Optional[int] = None
+    seed: Optional[str] = None

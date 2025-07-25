@@ -1,3 +1,6 @@
+# app/user_account/auth.py
+# CORRECTED - Remove country references to match your frontend
+
 import firebase_admin
 from firebase_admin import credentials, auth
 from fastapi import HTTPException, status
@@ -17,13 +20,6 @@ async def register_user(user_data: UserRegister) -> UserResponse:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Passwords do not match"
             )
-        
-        # Check if terms are agreed
-        # if not user_data.agree_to_terms:
-        #     raise HTTPException(
-        #         status_code=status.HTTP_400_BAD_REQUEST,
-        #         detail="You must agree to the terms and conditions"
-        #     )
 
         # Create user in Firebase
         user = auth.create_user(
@@ -32,19 +28,11 @@ async def register_user(user_data: UserRegister) -> UserResponse:
             display_name=user_data.full_name
         )
 
-        # Create custom claims for additional user data
-        # auth.set_custom_user_claims(
-        #     user.uid,
-        #     {
-        #         "country": user_data.country
-        #     }
-        # )
-
+        # Return user response (NO country field)
         return UserResponse(
             id=user.uid,
             full_name=user_data.full_name,
-            email=user_data.email,
-            # country=user_data.country
+            email=user_data.email
         )
 
     except auth.EmailAlreadyExistsError:
@@ -104,9 +92,6 @@ async def get_all_users() -> List[Dict[str, Any]]:
         # Transform user data into a list of dictionaries
         user_list = []
         for user in users.users:
-            # Get custom claims for additional user data
-            custom_claims = user.custom_claims or {}
-            
             user_data = {
                 "uid": user.uid,
                 "email": user.email,
@@ -117,7 +102,7 @@ async def get_all_users() -> List[Dict[str, Any]]:
                 "disabled": user.disabled,
                 "created_at": user.user_metadata.creation_timestamp,
                 "last_sign_in": user.user_metadata.last_sign_in_timestamp,
-                "country": custom_claims.get("country", ""),
+                # NO country field
                 "provider_data": [
                     {
                         "provider_id": provider.provider_id,
@@ -138,4 +123,4 @@ async def get_all_users() -> List[Dict[str, Any]]:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching users: {str(e)}"
-        ) 
+        )

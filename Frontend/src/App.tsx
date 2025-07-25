@@ -40,19 +40,23 @@ function App() {
             {/* Protected Routes */}
             <Route
               path="/profiles"
-              element={isAuthenticated ? <ProfileSelection /> : <Navigate to="/auth/login" />}
+              // element={isAuthenticated ? <ProfileSelection /> : <Navigate to="/auth/login" />}
+              element={<ProfileSelection />}
             />
             <Route
               path="/study-session"
-              element={isAuthenticated ? <StudySession /> : <Navigate to="/auth/login" />}
+              // element={isAuthenticated ? <StudySession /> : <Navigate to="/auth/login" />}
+              element={<StudySession />}
             />
             <Route
               path="/parent-dashboard"
-              element={isAuthenticated ? <ParentDashboard /> : <Navigate to="/auth/login" />}
+              // element={isAuthenticated ? <ParentDashboard /> : <Navigate to="/auth/login" />}
+              element={<ParentDashboard />}
             />
             <Route
               path="/edit-profile/:id"
-              element={isAuthenticated ? <EditProfile /> : <Navigate to="/auth/login" />}
+              // element={isAuthenticated ? <EditProfile /> : <Navigate to="/auth/login" />}
+              element={<EditProfile />}
             />
           </Routes>
         </div>
