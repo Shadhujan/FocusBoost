@@ -1,313 +1,315 @@
-# backend-main/app/main.py
-# Fixed version - Initialize Firebase before importing ML processor
+# app/main.py
+# Updated to include child management endpoints
 
-import logging
-import firebase_admin
-from firebase_admin import credentials, firestore
-from fastapi import FastAPI, HTTPException, WebSocket
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from firebase_admin import firestore
+from datetime import datetime
+import random
+import string
 
-# Setup logging first
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Your existing imports
+from .account_schema.schema import (
+    UserRegister, UserLogin, 
+    ChildCreate, ChildResponse, ChildUpdate
+)
+from .user_account.auth import register_user, login_user, forgot_password, get_all_users
+from .settings import settings
 
-# Initialize Firebase FIRST (before importing ML processor)
-try:
-    if not firebase_admin._apps:
-        # Update this path to your Firebase credentials file
-        cred = credentials.Certificate('./firebase-credentials.json')
-        firebase_admin.initialize_app(cred)
-    logger.info("✅ Firebase initialized")
-except Exception as e:
-    logger.error(f"❌ Firebase init failed: {e}")
-    logger.info("Continuing with fallback mode...")
+app = FastAPI(title=settings.PROJECT_NAME)
 
-# NOW import ML processor (after Firebase is initialized)
-try:
-    from .ml_processor import ml_processor, data_manager
-    from .websocket_manager import websocket_manager, websocket_endpoint
-    logger.info("✅ ML components loaded")
-except Exception as e:
-    logger.error(f"❌ Error importing ML components: {e}")
-    # Create fallback components
-    ml_processor = None
-    data_manager = None
-    websocket_manager = None
-
-# Create FastAPI app
-app = FastAPI(title="FocusBoost API", version="1.0.0")
-
-# CORS middleware
+# Configure CORS (your existing setup)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # React
-        "http://localhost:5173",  # Vite
-        "http://localhost:8080",  # Production
-    ],
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Request models
-class AnalyzeRequest(BaseModel):
-    sessionId: str
-    imageData: str
+# Helper functions for child profiles
+def generate_avatar_url(seed: str) -> str:
+    """Generate avatar URL using DiceBear API"""
+    return f"https://api.dicebear.com/7.x/adventurer/svg?seed={seed}&backgroundColor=b6e3f4,c0aede,ffd5dc,ffdfbf&backgroundType=solid"
 
-class StartSessionRequest(BaseModel):
-    childId: str
-    subject: str = "general"
+def generate_random_seed() -> str:
+    """Generate random seed for avatar"""
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=10))
 
-class EndSessionRequest(BaseModel):
-    sessionId: str
+# ==========================================
+# YOUR EXISTING AUTH ENDPOINTS (unchanged)
+# ==========================================
 
-# ==============================
-# FALLBACK FUNCTIONS
-# ==============================
+@app.post("/register", status_code=status.HTTP_201_CREATED)
+async def register(user_data: UserRegister):
+    return await register_user(user_data)
 
-def create_fallback_analysis():
-    """Fallback analysis when ML models fail"""
-    import random
-    from datetime import datetime
-    
-    learning_states = ['boredom', 'engagement', 'confusion', 'frustration']
-    emotions = ['happy', 'anger', 'sad', 'neutral', 'surprise', 'fear']
-    
-    return {
-        'learningState': random.choice(learning_states),
-        'learningConfidence': 0.7 + random.random() * 0.2,
-        'emotion': random.choice(emotions),
-        'emotionConfidence': 0.6 + random.random() * 0.3,
-        'attentionScore': 0.5 + random.random() * 0.4,
-        'timestamp': datetime.now().isoformat(),
-        'fallback': True
-    }
+@app.post("/login")
+async def login(user_data: UserLogin):
+    return await login_user(user_data)
 
-# ==============================
-# ML ANALYSIS ENDPOINT
-# ==============================
+@app.post("/forgot-password")
+async def reset_password(email: str):
+    return await forgot_password(email)
 
-@app.post("/api/analyze-base64")
-async def analyze_frame(request: AnalyzeRequest):
-    """Main endpoint for analyzing frames"""
-    try:
-        if ml_processor:
-            # Use real ML processor
-            result = ml_processor.process_frame(request.sessionId, request.imageData)
-        else:
-            # Use fallback
-            logger.warning("Using fallback analysis (ML models not loaded)")
-            result = create_fallback_analysis()
-        
-        if result:
-            response = {
-                'success': True,
-                'analysis': {
-                    'learningState': result['learningState'],
-                    'learningConfidence': result['learningConfidence'],
-                    'emotion': result['emotion'],
-                    'emotionConfidence': result['emotionConfidence'],
-                    'attentionScore': result['attentionScore'],
-                    'timestamp': result['timestamp']
-                }
-            }
-            
-            # Add intervention if exists (only for real ML processor)
-            if 'intervention' in result:
-                response['intervention'] = result['intervention']
-            
-            return response
-        else:
-            raise HTTPException(status_code=400, detail="Failed to process image")
-    
-    except Exception as e:
-        logger.error(f"Error in analyze_frame: {e}")
-        # Return fallback instead of error
-        fallback_result = create_fallback_analysis()
-        return {
-            'success': True,
-            'analysis': fallback_result,
-            'warning': 'Using fallback analysis due to error'
-        }
-
-# ==============================
-# SESSION MANAGEMENT
-# ==============================
-
-@app.post("/api/sessions/start")
-async def start_session(request: StartSessionRequest):
-    """Start new study session"""
-    try:
-        if data_manager:
-            session_id = await data_manager.create_session(request.childId, request.subject)
-        else:
-            # Fallback - generate simple session ID
-            import time
-            session_id = f"session_{int(time.time())}"
-            logger.warning("Using fallback session creation")
-        
-        if session_id:
-            return {
-                'success': True,
-                'sessionId': session_id
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Failed to create session")
-    
-    except Exception as e:
-        logger.error(f"Error starting session: {e}")
-        # Fallback session ID
-        import time
-        return {
-            'success': True,
-            'sessionId': f"fallback_session_{int(time.time())}",
-            'warning': 'Using fallback session'
-        }
-
-@app.post("/api/sessions/end")
-async def end_session(request: EndSessionRequest):
-    """End study session"""
-    try:
-        if data_manager:
-            success = await data_manager.end_session(request.sessionId)
-        else:
-            success = True  # Fallback
-            logger.warning("Using fallback session end")
-        
-        return {
-            'success': success,
-            'sessionId': request.sessionId
-        }
-    
-    except Exception as e:
-        logger.error(f"Error ending session: {e}")
-        return {
-            'success': True,
-            'sessionId': request.sessionId,
-            'warning': 'Fallback session end'
-        }
-
-@app.get("/api/session/{session_id}/summary")
-async def get_session_summary(session_id: str):
-    """Get session summary"""
-    try:
-        if firebase_admin._apps:
-            # Try to get real data
-            db = firestore.client()
-            session_doc = db.collection('study_sessions').document(session_id).get()
-            
-            if session_doc.exists:
-                session_data = session_doc.to_dict()
-                return {
-                    'success': True,
-                    'data': {
-                        'session': session_data,
-                        'recentAnalyses': []
-                    }
-                }
-        
-        # Fallback response
-        return {
-            'success': True,
-            'data': {
-                'session': {
-                    'sessionId': session_id,
-                    'averageAttentionScore': 0.75,
-                    'totalUpdates': 10
-                },
-                'recentAnalyses': []
-            },
-            'warning': 'Fallback session data'
-        }
-    
-    except Exception as e:
-        logger.error(f"Error getting session summary: {e}")
-        return {
-            'success': True,
-            'data': {
-                'session': {'sessionId': session_id},
-                'recentAnalyses': []
-            },
-            'warning': 'Fallback due to error'
-        }
-
-# ==============================
-# WEBSOCKET ENDPOINT
-# ==============================
-
-@app.websocket("/ws/{session_id}")
-async def websocket_route(websocket: WebSocket, session_id: str):
-    """WebSocket for real-time communication"""
-    try:
-        if websocket_manager:
-            await websocket_endpoint(websocket, session_id, websocket_manager)
-        else:
-            # Simple fallback WebSocket
-            await websocket.accept()
-            await websocket.send_text('{"type": "connected", "message": "Fallback WebSocket"}')
-            await websocket.close()
-    except Exception as e:
-        logger.error(f"WebSocket error: {e}")
-
-# ==============================
-# SIMPLE ENDPOINTS
-# ==============================
-
-@app.post("/api/quiz/{quiz_id}/submit")
-async def submit_quiz(quiz_id: str, answer_data: dict):
-    """Submit quiz answer"""
-    return {
-        'success': True,
-        'isCorrect': True,
-        'xpReward': 10
-    }
-
-@app.post("/api/children")
-async def create_child(child_data: dict):
-    """Create new child profile"""
-    import time
-    return {
-        'success': True,
-        'childId': f"child_{int(time.time())}"
-    }
-
-@app.get("/api/children")
-async def get_children(parentId: str):
-    """Get children for parent"""
-    return {
-        'success': True,
-        'data': []
-    }
-
-# ==============================
-# HEALTH CHECK
-# ==============================
-
-@app.get("/health")
-async def health_check():
-    """Health check with detailed status"""
-    return {
-        "status": "healthy",
-        "firebase": "connected" if firebase_admin._apps else "not initialized",
-        "ml_processor": "loaded" if ml_processor else "fallback mode",
-        "models": {
-            "learning_model": "loaded" if ml_processor and ml_processor.learning_model else "not loaded",
-            "emotion_model": "loaded" if ml_processor and ml_processor.emotion_model else "not loaded"
-        }
-    }
+@app.get("/users", status_code=status.HTTP_200_OK)
+async def get_users():
+    """Get all user details from Firebase."""
+    return await get_all_users()
 
 @app.get("/")
 async def root():
-    """Root endpoint"""
-    return {
-        "message": "FocusBoost API is running!",
-        "version": "1.0.0",
-        "docs": "/docs",
-        "health": "/health"
-    }
+    return {"message": f"Welcome to {settings.PROJECT_NAME} API"}
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+# ==========================================
+# NEW: CHILD MANAGEMENT ENDPOINTS
+# ==========================================
+
+@app.post("/api/children", response_model=ChildResponse, status_code=status.HTTP_201_CREATED)
+async def create_child(child_data: ChildCreate):
+    """Create child profile"""
+    try:
+        db = firestore.client()
+        
+        # Generate seed and avatar
+        seed = child_data.seed or generate_random_seed()
+        avatar_url = generate_avatar_url(seed)
+        
+        # Create child document
+        child_doc = {
+            'name': child_data.name,
+            'age': child_data.age,
+            'parentId': child_data.parentId,
+            'avatar': avatar_url,
+            'seed': seed,
+            'createdAt': datetime.now(),
+            'updatedAt': datetime.now()
+        }
+        
+        # Add to Firestore
+        doc_ref = db.collection('children').add(child_doc)
+        child_id = doc_ref[1].id
+        
+        return ChildResponse(
+            id=child_id,
+            name=child_data.name,
+            age=child_data.age,
+            parentId=child_data.parentId,
+            avatar=avatar_url,
+            seed=seed,
+            createdAt=datetime.now().isoformat()
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating child: {str(e)}"
+        )
+
+@app.get("/api/children/{parent_id}")
+async def get_children_by_parent(parent_id: str):
+    """Get all children for parent"""
+    try:
+        db = firestore.client()
+        
+        children_ref = db.collection('children').where('parentId', '==', parent_id)
+        children_docs = children_ref.stream()
+        
+        children = []
+        for doc in children_docs:
+            child_data = doc.to_dict()
+            child_data['id'] = doc.id
+            
+            # Convert datetime to string
+            if 'createdAt' in child_data:
+                child_data['createdAt'] = child_data['createdAt'].isoformat()
+            if 'updatedAt' in child_data:
+                child_data['updatedAt'] = child_data['updatedAt'].isoformat()
+            
+            # Ensure avatar exists
+            if 'avatar' not in child_data or not child_data['avatar']:
+                seed = child_data.get('seed', generate_random_seed())
+                child_data['avatar'] = generate_avatar_url(seed)
+                child_data['seed'] = seed
+            
+            children.append(child_data)
+        
+        return {
+            "success": True,
+            "children": children,
+            "count": len(children)
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching children: {str(e)}"
+        )
+
+@app.get("/api/children/child/{child_id}")
+async def get_child_by_id(child_id: str):
+    """Get specific child by ID"""
+    try:
+        db = firestore.client()
+        
+        child_ref = db.collection('children').document(child_id)
+        child_doc = child_ref.get()
+        
+        if not child_doc.exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Child not found"
+            )
+        
+        child_data = child_doc.to_dict()
+        child_data['id'] = child_doc.id
+        
+        # Convert datetime to string
+        if 'createdAt' in child_data:
+            child_data['createdAt'] = child_data['createdAt'].isoformat()
+        if 'updatedAt' in child_data:
+            child_data['updatedAt'] = child_data['updatedAt'].isoformat()
+        
+        return {
+            "success": True,
+            "child": child_data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching child: {str(e)}"
+        )
+
+@app.put("/api/children/{child_id}")
+async def update_child(child_id: str, child_update: ChildUpdate):
+    """Update child profile"""
+    try:
+        db = firestore.client()
+        
+        child_ref = db.collection('children').document(child_id)
+        child_doc = child_ref.get()
+        
+        if not child_doc.exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Child not found"
+            )
+        
+        # Prepare update data
+        update_data = {'updatedAt': datetime.now()}
+        
+        if child_update.name is not None:
+            update_data['name'] = child_update.name
+        if child_update.age is not None:
+            update_data['age'] = child_update.age
+        if child_update.seed is not None:
+            update_data['seed'] = child_update.seed
+            update_data['avatar'] = generate_avatar_url(child_update.seed)
+        
+        # Update document
+        child_ref.update(update_data)
+        
+        # Return updated data
+        updated_doc = child_ref.get()
+        updated_data = updated_doc.to_dict()
+        updated_data['id'] = updated_doc.id
+        
+        # Convert datetime to string
+        if 'createdAt' in updated_data:
+            updated_data['createdAt'] = updated_data['createdAt'].isoformat()
+        if 'updatedAt' in updated_data:
+            updated_data['updatedAt'] = updated_data['updatedAt'].isoformat()
+        
+        return {
+            "success": True,
+            "child": updated_data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating child: {str(e)}"
+        )
+
+@app.delete("/api/children/{child_id}")
+async def delete_child(child_id: str):
+    """Delete child profile"""
+    try:
+        db = firestore.client()
+        
+        child_ref = db.collection('children').document(child_id)
+        child_doc = child_ref.get()
+        
+        if not child_doc.exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Child not found"
+            )
+        
+        child_ref.delete()
+        
+        return {
+            "success": True,
+            "message": "Child profile deleted successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting child: {str(e)}"
+        )
+
+# ==========================================
+# UPDATED HEALTH CHECK
+# ==========================================
+
+@app.get("/health")
+async def health_check():
+    """Health check with child management"""
+    try:
+        db = firestore.client()
+        
+        # Test Firebase connection
+        test_collection = db.collection('children').limit(1).stream()
+        children_accessible = len(list(test_collection)) >= 0
+        
+        return {
+            "status": "healthy",
+            "features": {
+                "authentication": "enabled",
+                "child_management": "enabled",
+                "firebase": "connected"
+            },
+            "endpoints": {
+                "auth": ["/register", "/login", "/users"],
+                "children": [
+                    "POST /api/children",
+                    "GET /api/children/{parent_id}",
+                    "GET /api/children/child/{child_id}",
+                    "PUT /api/children/{child_id}",
+                    "DELETE /api/children/{child_id}"
+                ]
+            },
+            "data": {
+                "firebase_connection": "working",
+                "children_collection": "accessible" if children_accessible else "error"
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "status": "degraded",
+            "error": str(e),
+            "features": {
+                "authentication": "enabled",
+                "child_management": "error",
+                "firebase": "error"
+            }
+        }
