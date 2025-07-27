@@ -1,0 +1,597 @@
+# FocusBoost API Documentation (until child management)
+
+## Base URL
+```
+Development: http://localhost:8000
+```
+
+## 🔐 Authentication Endpoints
+
+### 1. User Registration
+**Endpoint:** `POST /register`
+
+**Request Schema:**
+```json
+{
+  "fullName": "string",
+  "email": "user@example.com",
+  "password": "string (min 8 characters)",
+  "confirmPassword": "string"
+}
+```
+
+**Success Response (201 Created):**
+```json
+{
+  "id": "firebase-user-id",
+  "full_name": "John Doe",
+  "email": "john@example.com"
+}
+```
+
+**Error Responses:**
+```json
+// 400 Bad Request - Passwords don't match
+{
+  "detail": "Passwords do not match"
+}
+
+// 400 Bad Request - Email already exists
+{
+  "detail": "Email already registered"
+}
+
+// 500 Internal Server Error
+{
+  "detail": "Error message"
+}
+```
+
+### 2. User Login
+**Endpoint:** `POST /login`
+
+**Request Schema:**
+```json
+{
+  "email": "user@example.com",
+  "password": "string",
+  "rememberMe": false  // optional
+}
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "access_token": "firebase-custom-token",
+  "token_type": "bearer",
+  "user_id": "firebase-user-id",
+  "email": "john@example.com",
+  "full_name": "John Doe"
+}
+```
+
+**Error Responses:**
+```json
+// 401 Unauthorized - Invalid credentials
+{
+  "detail": "Invalid email or password"
+}
+
+// 500 Internal Server Error
+{
+  "detail": "Error message"
+}
+```
+
+### 3. Password Reset
+**Endpoint:** `POST /forgot-password`
+
+**Request Schema:**
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "message": "Password reset email sent successfully"
+}
+```
+
+**Error Responses:**
+```json
+// 500 Internal Server Error
+{
+  "detail": "Error message"
+}
+```
+
+### 4. Get All Users (Admin)
+**Endpoint:** `GET /users`
+
+**Request:** No body required
+
+**Success Response (200 OK):**
+```json
+[
+  {
+    "uid": "firebase-user-id",
+    "email": "user@example.com",
+    "display_name": "John Doe",
+    "phone_number": null,
+    "photo_url": null,
+    "email_verified": true,
+    "disabled": false,
+    "created_at": 1642780800000,
+    "last_sign_in": 1642867200000,
+    "provider_data": [
+      {
+        "provider_id": "password",
+        "uid": "user@example.com",
+        "display_name": "John Doe",
+        "email": "user@example.com",
+        "phone_number": null,
+        "photo_url": null
+      }
+    ]
+  }
+]
+```
+
+## 👶 Child Management Endpoints
+
+### 1. Create Child Profile
+**Endpoint:** `POST /api/children`
+
+**Request Schema:**
+```json
+{
+  "name": "string",
+  "age": "integer (6-12)",
+  "parentId": "string (Firebase user ID)",
+  "seed": "string (optional - for avatar generation)"
+}
+```
+
+**Example Request:**
+```json
+{
+  "name": "Emma",
+  "age": 8,
+  "parentId": "firebase-parent-id",
+  "seed": "custom-seed-123"
+}
+```
+
+**Success Response (201 Created):**
+```json
+{
+  "id": "firestore-document-id",
+  "name": "Emma",
+  "age": 8,
+  "parentId": "firebase-parent-id",
+  "avatar": "https://api.dicebear.com/7.x/adventurer/svg?seed=custom-seed-123&backgroundColor=b6e3f4,c0aede,ffd5dc,ffdfbf&backgroundType=solid",
+  "seed": "custom-seed-123",
+  "createdAt": "2025-01-15T10:30:00.000Z"
+}
+```
+
+**Error Responses:**
+```json
+// 500 Internal Server Error
+{
+  "detail": "Error creating child: [error details]"
+}
+```
+
+### 2. Get Children by Parent
+**Endpoint:** `GET /api/children/{parent_id}`
+
+**Path Parameters:**
+- `parent_id` (string): Firebase user ID of the parent
+
+**Example Request:**
+```
+GET /api/children/firebase-parent-id
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "children": [
+    {
+      "id": "child-document-id-1",
+      "name": "Emma",
+      "age": 8,
+      "parentId": "firebase-parent-id",
+      "avatar": "https://api.dicebear.com/7.x/adventurer/svg?seed=seed1&backgroundColor=b6e3f4,c0aede,ffd5dc,ffdfbf&backgroundType=solid",
+      "seed": "seed1",
+      "createdAt": "2025-01-15T10:30:00.000Z",
+      "updatedAt": "2025-01-15T10:30:00.000Z"
+    },
+    {
+      "id": "child-document-id-2",
+      "name": "Oliver",
+      "age": 10,
+      "parentId": "firebase-parent-id",
+      "avatar": "https://api.dicebear.com/7.x/adventurer/svg?seed=seed2&backgroundColor=b6e3f4,c0aede,ffd5dc,ffdfbf&backgroundType=solid",
+      "seed": "seed2",
+      "createdAt": "2025-01-14T15:20:00.000Z",
+      "updatedAt": "2025-01-14T15:20:00.000Z"
+    }
+  ],
+  "count": 2
+}
+```
+
+**Empty Response (200 OK):**
+```json
+{
+  "success": true,
+  "children": [],
+  "count": 0
+}
+```
+
+**Error Responses:**
+```json
+// 500 Internal Server Error
+{
+  "detail": "Error fetching children: [error details]"
+}
+```
+
+### 3. Get Specific Child
+**Endpoint:** `GET /api/children/child/{child_id}`
+
+**Path Parameters:**
+- `child_id` (string): Firestore document ID of the child
+
+**Example Request:**
+```
+GET /api/children/child/child-document-id-1
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "child": {
+    "id": "child-document-id-1",
+    "name": "Emma",
+    "age": 8,
+    "parentId": "firebase-parent-id",
+    "avatar": "https://api.dicebear.com/7.x/adventurer/svg?seed=seed1&backgroundColor=b6e3f4,c0aede,ffd5dc,ffdfbf&backgroundType=solid",
+    "seed": "seed1",
+    "createdAt": "2025-01-15T10:30:00.000Z",
+    "updatedAt": "2025-01-15T10:30:00.000Z"
+  }
+}
+```
+
+**Error Responses:**
+```json
+// 404 Not Found
+{
+  "detail": "Child not found"
+}
+
+// 500 Internal Server Error
+{
+  "detail": "Error fetching child: [error details]"
+}
+```
+
+### 4. Update Child Profile
+**Endpoint:** `PUT /api/children/{child_id}`
+
+**Path Parameters:**
+- `child_id` (string): Firestore document ID of the child
+
+**Request Schema (all fields optional):**
+```json
+{
+  "name": "string (optional)",
+  "age": "integer (optional)",
+  "seed": "string (optional - regenerates avatar)"
+}
+```
+
+**Example Request:**
+```json
+{
+  "name": "Emma Johnson",
+  "age": 9,
+  "seed": "new-avatar-seed"
+}
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "child": {
+    "id": "child-document-id-1",
+    "name": "Emma Johnson",
+    "age": 9,
+    "parentId": "firebase-parent-id",
+    "avatar": "https://api.dicebear.com/7.x/adventurer/svg?seed=new-avatar-seed&backgroundColor=b6e3f4,c0aede,ffd5dc,ffdfbf&backgroundType=solid",
+    "seed": "new-avatar-seed",
+    "createdAt": "2025-01-15T10:30:00.000Z",
+    "updatedAt": "2025-01-15T11:45:00.000Z"
+  }
+}
+```
+
+**Error Responses:**
+```json
+// 404 Not Found
+{
+  "detail": "Child not found"
+}
+
+// 500 Internal Server Error
+{
+  "detail": "Error updating child: [error details]"
+}
+```
+
+### 5. Delete Child Profile
+**Endpoint:** `DELETE /api/children/{child_id}`
+
+**Path Parameters:**
+- `child_id` (string): Firestore document ID of the child
+
+**Example Request:**
+```
+DELETE /api/children/child-document-id-1
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Child profile deleted successfully"
+}
+```
+
+**Error Responses:**
+```json
+// 404 Not Found
+{
+  "detail": "Child not found"
+}
+
+// 500 Internal Server Error
+{
+  "detail": "Error deleting child: [error details]"
+}
+```
+
+## 🏥 System Endpoints
+
+### 1. Health Check
+**Endpoint:** `GET /health`
+
+**Request:** No body required
+
+**Success Response (200 OK):**
+```json
+{
+  "status": "healthy",
+  "features": {
+    "authentication": "enabled",
+    "child_management": "enabled",
+    "firebase": "connected"
+  },
+  "endpoints": {
+    "auth": ["/register", "/login", "/users"],
+    "children": [
+      "POST /api/children",
+      "GET /api/children/{parent_id}",
+      "GET /api/children/child/{child_id}",
+      "PUT /api/children/{child_id}",
+      "DELETE /api/children/{child_id}"
+    ]
+  },
+  "data": {
+    "firebase_connection": "working",
+    "children_collection": "accessible"
+  }
+}
+```
+
+**Degraded Response (200 OK):**
+```json
+{
+  "status": "degraded",
+  "error": "Firebase connection failed",
+  "features": {
+    "authentication": "enabled",
+    "child_management": "error",
+    "firebase": "error"
+  }
+}
+```
+
+### 2. Root Endpoint
+**Endpoint:** `GET /`
+
+**Request:** No body required
+
+**Success Response (200 OK):**
+```json
+{
+  "message": "Welcome to Shadujan Project API"
+}
+```
+
+## 📋 Data Models
+
+### User Registration Model
+```typescript
+interface UserRegister {
+  fullName: string;
+  email: string;          // Valid email format
+  password: string;       // Minimum 8 characters
+  confirmPassword: string;
+}
+```
+
+### User Login Model
+```typescript
+interface UserLogin {
+  email: string;
+  password: string;
+  rememberMe?: boolean;   // Optional, defaults to false
+}
+```
+
+### Child Create Model
+```typescript
+interface ChildCreate {
+  name: string;
+  age: number;           // Integer between 6-12
+  parentId: string;      // Firebase user ID
+  seed?: string;         // Optional avatar seed
+}
+```
+
+### Child Response Model
+```typescript
+interface ChildResponse {
+  id: string;            // Firestore document ID
+  name: string;
+  age: number;
+  parentId: string;
+  avatar: string;        // DiceBear avatar URL
+  seed: string;          // Avatar generation seed
+  createdAt: string;     // ISO 8601 timestamp
+}
+```
+
+### Child Update Model
+```typescript
+interface ChildUpdate {
+  name?: string;         // Optional
+  age?: number;          // Optional
+  seed?: string;         // Optional - regenerates avatar
+}
+```
+
+## 🔒 Authentication
+
+### Bearer Token Authentication
+Most endpoints (except registration and login) require authentication:
+
+**Header:**
+```
+Authorization: Bearer <firebase-custom-token>
+```
+
+**Example:**
+```bash
+curl -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..." \
+     http://localhost:8000/api/children/firebase-parent-id
+```
+
+## 🧪 Testing Examples
+
+### Create and Manage Child Profile Flow
+
+**1. Register User:**
+```bash
+curl -X POST http://localhost:8000/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fullName": "John Doe",
+    "email": "john@example.com",
+    "password": "password123",
+    "confirmPassword": "password123"
+  }'
+```
+
+**2. Login:**
+```bash
+curl -X POST http://localhost:8000/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "john@example.com",
+    "password": "password123"
+  }'
+```
+
+**3. Create Child:**
+```bash
+curl -X POST http://localhost:8000/api/children \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "name": "Emma",
+    "age": 8,
+    "parentId": "firebase-user-id"
+  }'
+```
+
+**4. Get Children:**
+```bash
+curl http://localhost:8000/api/children/firebase-user-id \
+  -H "Authorization: Bearer <token>"
+```
+
+## 🚫 Error Handling
+
+### HTTP Status Codes
+- `200` - Success
+- `201` - Created successfully
+- `400` - Bad request (validation error)
+- `401` - Unauthorized (authentication failed)
+- `404` - Resource not found
+- `500` - Internal server error
+
+### Error Response Format
+```json
+{
+  "detail": "Error description"
+}
+```
+
+## 📊 Database Collections
+
+### Children Collection (Firestore)
+```
+Collection: children
+Document Structure:
+{
+  name: string,
+  age: number,
+  parentId: string,
+  avatar: string,
+  seed: string,
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
+```
+
+### Relationships
+- **Users → Children**: One-to-Many (parentId reference)
+- **Future**: Children → Sessions: One-to-Many
+- **Future**: Sessions → AttentionData: One-to-Many
+
+## 🔮 Future Endpoints (Planned)
+
+### Study Sessions
+- `POST /api/sessions/start` - Start study session
+- `POST /api/sessions/end` - End study session
+- `GET /api/sessions/{child_id}` - Get session history
+
+### ML Analysis
+- `POST /api/analyze-frame` - Process camera frame
+- `WebSocket /ws/{session_id}` - Real-time updates
+
+### Analytics
+- `GET /api/analytics/{child_id}` - Child analytics
+- `GET /api/dashboard/{parent_id}` - Parent dashboard data

@@ -1,9 +1,11 @@
+// src/pages/auth/Signup.tsx
+// Updated to use apiService instead of raw fetch
+
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, UserPlus, AlertCircle, Check } from 'lucide-react';
-import { auth } from '../../lib/firebase';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { apiService } from '../../services/apiService';
 import Logo from '../../components/shared/Logo';
 
 const Signup = () => {
@@ -19,7 +21,6 @@ const Signup = () => {
     confirmPassword: ''
   });
 
-
   const validatePassword = () => {
     if (formData.password.length < 8) {
       return 'Password must be at least 8 characters long';
@@ -31,56 +32,50 @@ const Signup = () => {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setError(null);
+    e.preventDefault();
+    setError(null);
 
-  // client-side password check...
-  const passwordError = validatePassword();
-  if (passwordError) {
-    setError(passwordError);
-    return;
-  }
-
-  setLoading(true);
-  try {
-  const res = await fetch("http://localhost:8000/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      fullName: formData.fullName,
-      email: formData.email,
-      password: formData.password,
-      confirmPassword: formData.confirmPassword
-    }),
-  });
-
-  if (!res.ok) {
-    console.error("Status:", res.status, res.statusText);
-    // Try to parse JSON; if that fails, fallback to text
-    let body: any;
-    try {
-      body = await res.json();
-      console.error("Response JSON:", body);
-    } catch {
-      body = await res.text();
-      console.error("Response text:", body);
+    // Client-side validation
+    const passwordError = validatePassword();
+    if (passwordError) {
+      setError(passwordError);
+      return;
     }
-    throw new Error(body.detail || body || res.statusText);
-  }
-  // const data = await res.json();
-  setSuccess(true);
-  setTimeout(() =>
-    navigate('/auth/login'), 3000); // Redirect after 3 seconds
 
-  // on success...
-} catch (e: any) {
-  console.error("Signup error:", e);
-  setError(e.message);
-} finally {
-    setLoading(false);
-  }
-};
+    setLoading(true);
 
+    try {
+      console.log('🔐 Attempting registration with:', { 
+        fullName: formData.fullName, 
+        email: formData.email 
+      });
+
+      const result = await apiService.register({
+        fullName: formData.fullName,
+        email: formData.email,
+        password: formData.password,
+        confirmPassword: formData.confirmPassword
+      });
+
+      if (result.success && result.data) {
+        console.log('✅ Registration successful:', result.data);
+        setSuccess(true);
+        
+        // Redirect to login after 3 seconds
+        setTimeout(() => {
+          navigate('/auth/login');
+        }, 3000);
+      } else {
+        console.error('❌ Registration failed:', result.error);
+        setError(result.error || 'Registration failed');
+      }
+    } catch (error: any) {
+      console.error('🚨 Registration error:', error);
+      setError(error.message || 'An unexpected error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-50 to-indigo-50 flex flex-col">
@@ -122,6 +117,7 @@ const Signup = () => {
                 className="input"
                 value={formData.fullName}
                 onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                placeholder="Enter your full name"
               />
             </div>
 
@@ -136,6 +132,7 @@ const Signup = () => {
                 className="input"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="Enter your email address"
               />
             </div>
 
@@ -151,11 +148,12 @@ const Signup = () => {
                   className="input pr-12"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  placeholder="Create a password"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500"
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
                 >
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
@@ -176,6 +174,7 @@ const Signup = () => {
                 className="input"
                 value={formData.confirmPassword}
                 onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                placeholder="Confirm your password"
               />
             </div>
 

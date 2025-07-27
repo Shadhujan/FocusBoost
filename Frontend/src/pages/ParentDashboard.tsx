@@ -1,15 +1,20 @@
+// src/pages/ParentDashboard.tsx
+// Updated with session management integration
+
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Settings, User } from 'lucide-react';
+import { ArrowLeft, Settings, User, Activity } from 'lucide-react';
 import Logo from '../components/shared/Logo';
 import DashboardCharts from '../components/parent/DashboardCharts';
 import ProfileManager from '../components/parent/ProfileManager';
+import SessionManager from '../components/parent/SessionManager';
 import { useUser } from '../context/UserContext';
 
 const ParentDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { children, isParentMode, toggleParentMode } = useUser();
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'analytics' | 'sessions' | 'profiles'>('analytics');
 
   // Redirect if not in parent mode and there are no children profiles
   useEffect(() => {
@@ -27,6 +32,35 @@ const ParentDashboard: React.FC = () => {
     }
   }, [children, selectedChildId]);
 
+  const renderMainContent = () => {
+    if (!selectedChildId) {
+      return (
+        <div className="bg-white rounded-xl shadow p-8 text-center">
+          <h2 className="text-xl font-bold mb-2">No Child Selected</h2>
+          <p className="text-gray-600 mb-4">
+            Please select a child from the sidebar to view their data.
+          </p>
+        </div>
+      );
+    }
+
+    switch (activeTab) {
+      case 'analytics':
+        return <DashboardCharts childId={selectedChildId} />;
+      case 'sessions':
+        return (
+          <div className="space-y-6">
+            <SessionManager selectedChildId={selectedChildId} />
+            <DashboardCharts childId={selectedChildId} />
+          </div>
+        );
+      case 'profiles':
+        return <ProfileManager />;
+      default:
+        return <DashboardCharts childId={selectedChildId} />;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm">
@@ -36,7 +70,7 @@ const ParentDashboard: React.FC = () => {
               toggleParentMode();
               navigate('/');
             }}
-            className="flex items-center text-gray-600 hover:text-gray-800"
+            className="flex items-center text-gray-600 hover:text-gray-800 transition-colors"
           >
             <ArrowLeft size={18} className="mr-1" />
             Exit Parent Mode
@@ -49,9 +83,46 @@ const ParentDashboard: React.FC = () => {
       </header>
       
       <main className="container mx-auto px-4 py-8">
-        <h1 className="text-3xl font-bold mb-8">Parent Dashboard</h1>
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-3xl font-bold">Parent Dashboard</h1>
+          
+          {/* Tab Navigation */}
+          <div className="flex bg-white rounded-lg p-1 shadow-sm">
+            <button
+              onClick={() => setActiveTab('analytics')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'analytics'
+                  ? 'bg-primary-500 text-white'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              Analytics
+            </button>
+            <button
+              onClick={() => setActiveTab('sessions')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'sessions'
+                  ? 'bg-primary-500 text-white'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              Sessions
+            </button>
+            <button
+              onClick={() => setActiveTab('profiles')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'profiles'
+                  ? 'bg-primary-500 text-white'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              Manage Profiles
+            </button>
+          </div>
+        </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          {/* Sidebar */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-xl shadow p-4 mb-6">
               <h2 className="text-xl font-bold mb-4 flex items-center">
@@ -93,11 +164,25 @@ const ParentDashboard: React.FC = () => {
                 </div>
               ) : (
                 <div className="text-center py-6 text-gray-500">
-                  No profiles created yet
+                  <User className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                  <p className="font-medium">No profiles created yet</p>
+                  <p className="text-sm">Create a child profile to get started</p>
                 </div>
               )}
             </div>
+
+            {/* Quick Session Status (only show if child selected and not on profiles tab) */}
+            {selectedChildId && activeTab !== 'profiles' && activeTab !== 'sessions' && (
+              <div className="bg-white rounded-xl shadow p-4 mb-6">
+                <h3 className="font-semibold mb-3 flex items-center">
+                  <Activity size={16} className="mr-2 text-green-500" />
+                  Quick Session Status
+                </h3>
+                <SessionManager selectedChildId={selectedChildId} />
+              </div>
+            )}
             
+            {/* Help Section */}
             <div className="bg-primary-50 rounded-xl p-4">
               <h3 className="font-bold mb-2">Need Help?</h3>
               <p className="text-sm text-gray-700 mb-3">
@@ -112,22 +197,10 @@ const ParentDashboard: React.FC = () => {
             </div>
           </div>
           
+          {/* Main Content */}
           <div className="lg:col-span-3">
-            {selectedChildId ? (
-              <DashboardCharts childId={selectedChildId} />
-            ) : (
-              <div className="bg-white rounded-xl shadow p-8 text-center">
-                <h2 className="text-xl font-bold mb-2">No Child Selected</h2>
-                <p className="text-gray-600 mb-4">
-                  Please select a child from the sidebar to view their focus data.
-                </p>
-              </div>
-            )}
+            {renderMainContent()}
           </div>
-        </div>
-        
-        <div className="mt-10">
-          <ProfileManager />
         </div>
       </main>
     </div>

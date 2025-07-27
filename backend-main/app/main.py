@@ -8,12 +8,21 @@ from datetime import datetime
 import random
 import string
 
+from .session_management.session_api import (
+    start_study_session, end_study_session, get_session_details,
+    get_child_sessions, get_session_analytics, get_active_sessions
+)
+
 # Your existing imports
 from .account_schema.schema import (
     UserRegister, UserLogin, 
-    ChildCreate, ChildResponse, ChildUpdate
+    ChildCreate, ChildResponse, ChildUpdate,
+    StartSessionRequest, EndSessionRequest, StartSessionResponse, 
+    EndSessionResponse, SessionListResponse, SessionAnalyticsResponse,
+    ActiveSessionsResponse
 )
 from .user_account.auth import register_user, login_user, forgot_password, get_all_users
+
 from .settings import settings
 
 app = FastAPI(title=settings.PROJECT_NAME)
@@ -266,25 +275,182 @@ async def delete_child(child_id: str):
             detail=f"Error deleting child: {str(e)}"
         )
 
+# Add these session routes after your existing child management endpoints
+# ==========================================
+# SESSION MANAGEMENT ENDPOINTS
+# ==========================================
+
+@app.post("/api/sessions/start", response_model=StartSessionResponse, status_code=status.HTTP_201_CREATED)
+async def start_session(session_data: StartSessionRequest):
+    """Start a new study session for a child"""
+    session_dict = {
+        'childId': session_data.childId,
+        'subject': session_data.subject,
+        'plannedDuration': session_data.plannedDuration,
+        'settings': session_data.settings.dict() if session_data.settings else None
+    }
+    return await start_study_session(session_dict)
+
+@app.post("/api/sessions/{session_id}/end", response_model=EndSessionResponse)
+async def end_session(session_id: str, end_data: EndSessionRequest):
+    """End an active study session"""
+    # Ensure session_id matches
+    if end_data.sessionId != session_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Session ID mismatch"
+        )
+    
+    session_dict = {
+        'sessionId': end_data.sessionId,
+        'endTime': end_data.endTime,
+        'actualDuration': end_data.actualDuration,
+        'results': end_data.results
+    }
+    return await end_study_session(session_dict)
+
+@app.get("/api/sessions/{session_id}")
+async def get_session(session_id: str):
+    """Get detailed information about a specific session"""
+    return await get_session_details(session_id)
+
+@app.get("/api/sessions/child/{child_id}", response_model=SessionListResponse)
+async def get_sessions_by_child(
+    child_id: str,
+    limit: int = 10,
+    status_filter: str = None
+):
+    """Get list of sessions for a specific child"""
+    return await get_child_sessions(child_id, limit, status_filter)
+
+@app.get("/api/sessions/child/{child_id}/analytics", response_model=SessionAnalyticsResponse)
+async def get_child_analytics(child_id: str, days: int = 7):
+    """Get session analytics for a child over specified days"""
+    return await get_session_analytics(child_id, days)
+
+@app.get("/api/sessions/active", response_model=ActiveSessionsResponse)
+async def get_active_sessions_endpoint():
+    """Get all currently active sessions (for admin/monitoring)"""
+    return await get_active_sessions()
+
+@app.post("/api/sessions/{session_id}/pause")
+async def pause_session(session_id: str):
+    """Pause an active session (for future use)"""
+    try:
+        from firebase_admin import firestore
+        from datetime import datetime, timezone
+        
+        db = firestore.client()
+        
+        session_ref = db.collection('study_sessions').document(session_id)
+        session_doc = session_ref.get()
+        
+        if not session_doc.exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found"
+            )
+        
+        session_data = session_doc.to_dict()
+        
+        if session_data.get('status') != 'active':
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Session is not active"
+            )
+        
+        # Update session status
+        session_ref.update({
+            'status': 'paused',
+            'pausedAt': datetime.now(timezone.utc).isoformat(),
+            'updatedAt': datetime.now(timezone.utc).isoformat()
+        })
+        
+        return {
+            "success": True,
+            "message": "Session paused successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error pausing session: {str(e)}"
+        )
+
+@app.post("/api/sessions/{session_id}/resume")
+async def resume_session(session_id: str):
+    """Resume a paused session (for future use)"""
+    try:
+        from firebase_admin import firestore
+        from datetime import datetime, timezone
+        
+        db = firestore.client()
+        
+        session_ref = db.collection('study_sessions').document(session_id)
+        session_doc = session_ref.get()
+        
+        if not session_doc.exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found"
+            )
+        
+        session_data = session_doc.to_dict()
+        
+        if session_data.get('status') != 'paused':
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Session is not paused"
+            )
+        
+        # Update session status
+        session_ref.update({
+            'status': 'active',
+            'resumedAt': datetime.now(timezone.utc).isoformat(),
+            'updatedAt': datetime.now(timezone.utc).isoformat()
+        })
+        
+        return {
+            "success": True,
+            "message": "Session resumed successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error resuming session: {str(e)}"
+        )
+
 # ==========================================
 # UPDATED HEALTH CHECK
 # ==========================================
 
 @app.get("/health")
 async def health_check():
-    """Health check with child management"""
+    """Health check with session management"""
     try:
+        from firebase_admin import firestore
+        
         db = firestore.client()
         
         # Test Firebase connection
         test_collection = db.collection('children').limit(1).stream()
         children_accessible = len(list(test_collection)) >= 0
         
+        # Test sessions collection
+        test_sessions = db.collection('study_sessions').limit(1).stream()
+        sessions_accessible = len(list(test_sessions)) >= 0
+        
         return {
             "status": "healthy",
             "features": {
                 "authentication": "enabled",
                 "child_management": "enabled",
+                "session_management": "enabled",
                 "firebase": "connected"
             },
             "endpoints": {
@@ -295,11 +461,22 @@ async def health_check():
                     "GET /api/children/child/{child_id}",
                     "PUT /api/children/{child_id}",
                     "DELETE /api/children/{child_id}"
+                ],
+                "sessions": [
+                    "POST /api/sessions/start",
+                    "POST /api/sessions/{session_id}/end",
+                    "GET /api/sessions/{session_id}",
+                    "GET /api/sessions/child/{child_id}",
+                    "GET /api/sessions/child/{child_id}/analytics",
+                    "GET /api/sessions/active",
+                    "POST /api/sessions/{session_id}/pause",
+                    "POST /api/sessions/{session_id}/resume"
                 ]
             },
             "data": {
                 "firebase_connection": "working",
-                "children_collection": "accessible" if children_accessible else "error"
+                "children_collection": "accessible" if children_accessible else "error",
+                "sessions_collection": "accessible" if sessions_accessible else "error"
             }
         }
         
@@ -309,7 +486,8 @@ async def health_check():
             "error": str(e),
             "features": {
                 "authentication": "enabled",
-                "child_management": "error",
+                "child_management": "enabled", 
+                "session_management": "error",
                 "firebase": "error"
             }
         }

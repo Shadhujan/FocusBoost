@@ -1,9 +1,11 @@
+// src/pages/auth/ResetPassword.tsx
+// Updated to use FastAPI backend instead of Firebase
+
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Send, AlertCircle, Check } from 'lucide-react';
-import { auth } from '../../lib/firebase';
-import { sendPasswordResetEmail } from 'firebase/auth';
+import { apiService } from '../../services/apiService';
 import Logo from '../../components/shared/Logo';
 
 const ResetPassword = () => {
@@ -18,10 +20,20 @@ const ResetPassword = () => {
     setLoading(true);
 
     try {
-      await sendPasswordResetEmail(auth, email);
-      setSuccess(true);
+      console.log('📧 Sending password reset for:', email);
+      
+      const result = await apiService.forgotPassword(email);
+
+      if (result.success) {
+        console.log('✅ Password reset email sent successfully');
+        setSuccess(true);
+      } else {
+        console.error('❌ Password reset failed:', result.error);
+        setError(result.error || 'Failed to send password reset email');
+      }
     } catch (error: any) {
-      setError(error.message);
+      console.error('🚨 Password reset error:', error);
+      setError(error.message || 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }
@@ -71,7 +83,11 @@ const ResetPassword = () => {
                   className="input"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Enter your email address"
                 />
+                <p className="mt-1 text-sm text-gray-500">
+                  We'll send password reset instructions to this email address.
+                </p>
               </div>
 
               <button

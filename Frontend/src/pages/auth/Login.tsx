@@ -1,13 +1,18 @@
+// src/pages/auth/Login.tsx
+// Updated with smart redirect logic after login
+
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react';
-import { auth } from '../../lib/firebase';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { useUser } from '../../context/UserContext';
 import Logo from '../../components/shared/Logo';
 
 const Login = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { login, children } = useUser();
+  
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,24 +22,51 @@ const Login = () => {
     rememberMe: false
   });
 
+  // Get the intended destination from location state (for redirects)
+  const from = location.state?.from?.pathname || null;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
     try {
-      await signInWithEmailAndPassword(auth, formData.email, formData.password);
+      console.log('🔐 Attempting login with:', { email: formData.email });
+      
+      const success = await login(formData.email, formData.password, formData.rememberMe);
 
-      // Store remember me preference
-      if (formData.rememberMe) {
-        localStorage.setItem('rememberMe', 'true');
+      if (success) {
+        console.log('✅ Login successful');
+        
+        // Store remember me preference
+        if (formData.rememberMe) {
+          localStorage.setItem('rememberMe', 'true');
+        } else {
+          localStorage.removeItem('rememberMe');
+        }
+
+        // Smart redirect logic
+        if (from) {
+          // User was redirected here from another page, go back there
+          navigate(from, { replace: true });
+        } else {
+          // Default redirect logic based on children
+          if (children.length === 0) {
+            // No children profiles - go to parent dashboard to create them
+            console.log('🏠 No children found, redirecting to parent dashboard');
+            navigate('/parent-dashboard', { replace: true });
+          } else {
+            // Has children - go to profile selection
+            console.log('👶 Children found, redirecting to profiles');
+            navigate('/profiles', { replace: true });
+          }
+        }
       } else {
-        localStorage.removeItem('rememberMe');
+        setError('Login failed. Please check your credentials.');
       }
-
-      navigate('/profiles');
     } catch (error: any) {
-      setError(error.message);
+      console.error('🚨 Login error:', error);
+      setError(error.message || 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }
@@ -73,6 +105,7 @@ const Login = () => {
                 className="input"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="Enter your email"
               />
             </div>
 
@@ -88,11 +121,12 @@ const Login = () => {
                   className="input pr-12"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  placeholder="Enter your password"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500"
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
                 >
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
@@ -140,6 +174,16 @@ const Login = () => {
               Create Account
             </Link>
           </p>
+
+          {/* Back to home link */}
+          <div className="mt-4 text-center">
+            <Link 
+              to="/" 
+              className="text-sm text-gray-500 hover:text-gray-700"
+            >
+              ← Back to Home
+            </Link>
+          </div>
         </motion.div>
       </main>
     </div>

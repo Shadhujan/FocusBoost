@@ -1,3 +1,4 @@
+// src/pages/ProfileSelection.tsx
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -103,7 +104,7 @@ const ProfileSelection: React.FC = () => {
             </motion.div>
           ))}
           
-          <motion.div
+          {/* <motion.div
             variants={{
               hidden: { opacity: 0, scale: 0.8 },
               show: { opacity: 1, scale: 1 }
@@ -117,7 +118,7 @@ const ProfileSelection: React.FC = () => {
               <PlusCircle size={48} className="text-gray-400 mb-4" />
               <p className="text-gray-600 font-medium">Add Profile</p>
             </button>
-          </motion.div>
+          </motion.div> */}
         </motion.div>
       </div>
     </div>

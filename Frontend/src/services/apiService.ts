@@ -1,35 +1,50 @@
 // Frontend/src/services/apiService.ts
-// Service to handle all API calls to your FastAPI backend
+// Updated API service to match your actual FastAPI backend
 
-interface AnalysisResult {
-  learningState: string;
-  learningConfidence: number;
-  emotion: string;
-  emotionConfidence: number;
-  attentionScore: number;
-  timestamp: string;
+// ===========================
+// TYPES MATCHING YOUR BACKEND
+// ===========================
+
+interface UserRegister {
+  fullName: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
 }
 
-interface InterventionData {
-  id?: string;
-  type: 'quiz' | 'break' | 'hint';
-  reason: string;
-  quiz?: {
-    question: string;
-    options: string[];
-    correctAnswer: number;
-  };
-  message?: string;
-  duration?: number;
+interface UserLogin {
+  email: string;
+  password: string;
+  rememberMe?: boolean;
 }
 
-interface SessionData {
-  sessionId: string;
-  childId: string;
-  subject: string;
-  startTime: string;
-  endTime?: string;
-  status: 'active' | 'completed' | 'paused';
+interface UserResponse {
+  id: string;
+  full_name: string;
+  email: string;
+}
+
+interface ChildCreate {
+  name: string;
+  age: number;
+  parentId: string;
+  seed?: string;
+}
+
+interface ChildResponse {
+  id: string;
+  name: string;
+  age: number;
+  parentId: string;
+  avatar: string;
+  seed: string;
+  createdAt: string;
+}
+
+interface ChildUpdate {
+  name?: string;
+  age?: number;
+  seed?: string;
 }
 
 interface ApiResponse<T> {
@@ -37,6 +52,71 @@ interface ApiResponse<T> {
   data?: T;
   error?: string;
 }
+
+interface BackendResponse<T> {
+  success?: boolean;
+  data?: T;
+  error?: string;
+  detail?: string;
+  message?: string;
+}
+
+// ===========================
+// SESSION MANAGEMENT TYPES
+// ===========================
+
+interface SessionSettings {
+  sessionDuration: number;     // minutes
+  breakDuration: number;       // minutes
+  difficultyLevel: 'easy' | 'medium' | 'hard';
+  subjects: string[];
+  enableQuizzes: boolean;
+  enableBreakReminders: boolean;
+}
+
+interface StudySession {
+  sessionId: string;
+  childId: string;
+  parentId: string;
+  subject: string;
+  startTime: string;
+  endTime?: string;
+  plannedDuration: number;     // seconds
+  actualDuration?: number;     // seconds
+  status: 'active' | 'completed' | 'paused' | 'cancelled';
+  settings: SessionSettings;
+  results?: {
+    totalTime: number;
+    focusedTime: number;
+    distractedTime: number;
+    averageAttentionScore: number;
+    quizzesTaken: number;
+    correctAnswers: number;
+    xpEarned: number;
+    emotionSummary: {
+      happy: number;
+      focused: number;
+      distracted: number;
+      frustrated: number;
+    };
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface SessionAnalytics {
+  totalSessions: number;
+  completedSessions: number;
+  totalStudyTime: number;
+  averageSessionLength: number;
+  averageFocusScore: number;
+  mostStudiedSubject: string;
+  subjectDistribution: Record<string, number>;
+}
+
+// ===========================
+// API SERVICE CLASS
+// ===========================
 
 class ApiService {
   private baseURL: string;
@@ -65,14 +145,16 @@ class ApiService {
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> {
     try {
-      const headers: HeadersInit = {
+      const headers: { [key: string]: string } = {
         'Content-Type': 'application/json',
-        ...options.headers,
+        ...(options.headers as Record<string, string>),
       };
 
       if (this.authToken) {
         headers['Authorization'] = `Bearer ${this.authToken}`;
       }
+
+      console.log(`🔗 API Call: ${options.method || 'GET'} ${this.baseURL}${endpoint}`);
 
       const response = await fetch(`${this.baseURL}${endpoint}`, {
         ...options,
@@ -80,14 +162,18 @@ class ApiService {
       });
 
       const data = await response.json();
+      console.log(`📥 Response:`, data);
 
       if (response.ok) {
         return { success: true, data };
       } else {
-        return { success: false, error: data.detail || data.error || 'API call failed' };
+        return { 
+          success: false, 
+          error: data.detail || data.message || data.error || 'API call failed' 
+        };
       }
     } catch (error) {
-      console.error('API call error:', error);
+      console.error('🚨 API call error:', error);
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Network error' 
@@ -96,205 +182,52 @@ class ApiService {
   }
 
   // ===========================
-  // ML ANALYSIS ENDPOINTS
+  // AUTHENTICATION ENDPOINTS
   // ===========================
 
-  // Analyze single frame with your two ML models
-  async analyzeFrame(sessionId: string, imageData: string): Promise<ApiResponse<{
-    analysis: AnalysisResult;
-    intervention?: InterventionData;
-  }>> {
-    return this.apiCall('/api/analyze-base64', {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId,
-        imageData
-      })
-    });
-  }
-
-  // ===========================
-  // SESSION MANAGEMENT
-  // ===========================
-
-  // Start new study session
-  async startSession(childId: string, subject: string = 'general'): Promise<ApiResponse<{ sessionId: string }>> {
-    return this.apiCall('/api/sessions/start', {
-      method: 'POST',
-      body: JSON.stringify({
-        childId,
-        subject,
-        startTime: new Date().toISOString()
-      })
-    });
-  }
-
-  // End study session
-  async endSession(sessionId: string): Promise<ApiResponse<{ sessionId: string }>> {
-    return this.apiCall('/api/sessions/end', {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId,
-        endTime: new Date().toISOString()
-      })
-    });
-  }
-
-  // Get session summary
-  async getSessionSummary(sessionId: string): Promise<ApiResponse<{
-    session: SessionData;
-    averageAttentionScore: number;
-    totalAnalyses: number;
-    dominantLearningState: string;
-    dominantEmotion: string;
-    interventionCount: number;
-    recentAnalyses: AnalysisResult[];
-  }>> {
-    return this.apiCall(`/api/session/${sessionId}/summary`);
-  }
-
-  // ===========================
-  // QUIZ SYSTEM
-  // ===========================
-
-  // Submit quiz answer
-  async submitQuizAnswer(
-    quizId: string, 
-    userAnswer: number, 
-    responseTime: number
-  ): Promise<ApiResponse<{
-    isCorrect: boolean;
-    correctAnswer: number;
-    xpReward: number;
-  }>> {
-    return this.apiCall(`/api/quiz/${quizId}/submit`, {
-      method: 'POST',
-      body: JSON.stringify({
-        userAnswer,
-        responseTime
-      })
-    });
-  }
-
-  // ===========================
-  // CHILD MANAGEMENT
-  // ===========================
-
-  // Create new child profile
-  async createChild(childData: {
-    name: string;
-    age: number;
-    grade: string;
-    parentId: string;
-  }): Promise<ApiResponse<{ childId: string }>> {
-    return this.apiCall('/api/children', {
-      method: 'POST',
-      body: JSON.stringify(childData)
-    });
-  }
-
-  // Get children for a parent
-  async getChildren(parentId: string): Promise<ApiResponse<{
-    id: string;
-    name: string;
-    age: number;
-    grade: string;
-    createdAt: string;
-  }[]>> {
-    return this.apiCall(`/api/children?parentId=${parentId}`);
-  }
-
-  // Update child profile
-  async updateChild(
-    childId: string, 
-    updateData: Partial<{
-      name: string;
-      age: number;
-      grade: string;
-      settings: any;
-    }>
-  ): Promise<ApiResponse<{ childId: string }>> {
-    return this.apiCall(`/api/children/${childId}`, {
-      method: 'PUT',
-      body: JSON.stringify(updateData)
-    });
-  }
-
-  // ===========================
-  // DASHBOARD & ANALYTICS
-  // ===========================
-
-  // Get child overview for dashboard
-  async getChildOverview(childId: string): Promise<ApiResponse<{
-    child: {
-      id: string;
-      name: string;
-      age: number;
-      grade: string;
-    };
-    recentSessions: SessionData[];
-    totalStudyTime: number;
-    averageAttentionScore: number;
-    learningStateDistribution: Record<string, number>;
-    emotionDistribution: Record<string, number>;
-    improvementTrend: 'improving' | 'stable' | 'declining';
-  }>> {
-    return this.apiCall(`/api/dashboard/child/${childId}`);
-  }
-
-  // Get session history for a child
-  async getSessionHistory(
-    childId: string, 
-    limit: number = 10
-  ): Promise<ApiResponse<SessionData[]>> {
-    return this.apiCall(`/api/dashboard/sessions/${childId}?limit=${limit}`);
-  }
-
-  // ===========================
-  // AUTHENTICATION
-  // ===========================
-
-  // Login
-  async login(email: string, password: string): Promise<ApiResponse<{
-    access_token: string;
-    token_type: string;
-    user: {
-      id: string;
-      email: string;
-      displayName: string;
-    };
-  }>> {
-    const result = await this.apiCall('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password })
-    });
-
-    if (result.success && result.data?.access_token) {
-      this.setAuthToken(result.data.access_token);
-    }
-
-    return result;
-  }
-
-  // Register
+  // Register new user
   async register(userData: {
+    fullName: string;
     email: string;
     password: string;
-    displayName: string;
-  }): Promise<ApiResponse<{
-    access_token: string;
-    token_type: string;
-    user: {
-      id: string;
-      email: string;
-      displayName: string;
-    };
-  }>> {
-    const result = await this.apiCall('/api/auth/register', {
+    confirmPassword: string;
+  }): Promise<ApiResponse<UserResponse>> {
+    const result = await this.apiCall<UserResponse>('/register', {
       method: 'POST',
       body: JSON.stringify(userData)
     });
 
+    return result;
+  }
+
+  // Login user
+  async login(credentials: {
+    email: string;
+    password: string;
+    rememberMe?: boolean;
+  }): Promise<ApiResponse<{
+    access_token: string;
+    token_type: string;
+    user_id: string;
+    email: string;
+    full_name: string;
+  }>> {
+    const result = await this.apiCall<{
+      access_token: string;
+      token_type: string;
+      user_id: string;
+      email: string;
+      full_name: string;
+    }>('/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: credentials.email,
+        password: credentials.password,
+        remember_me: credentials.rememberMe || false
+      })
+    });
+
+    // Store token if login successful
     if (result.success && result.data?.access_token) {
       this.setAuthToken(result.data.access_token);
     }
@@ -302,163 +235,244 @@ class ApiService {
     return result;
   }
 
-  // Refresh token
-  async refreshToken(): Promise<ApiResponse<{
-    access_token: string;
-    token_type: string;
-  }>> {
-    const result = await this.apiCall('/api/auth/refresh', {
-      method: 'POST'
+  // Forgot password
+  async forgotPassword(email: string): Promise<ApiResponse<{ message: string }>> {
+    return this.apiCall<{ message: string }>('/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email })
     });
+  }
 
-    if (result.success && result.data?.access_token) {
-      this.setAuthToken(result.data.access_token);
-    }
-
-    return result;
+  // Get all users (admin)
+  async getAllUsers(): Promise<ApiResponse<any[]>> {
+    return this.apiCall<any[]>('/users');
   }
 
   // Logout
   logout(): void {
     this.clearAuthToken();
   }
-}
 
-// ===========================
-// WEBSOCKET SERVICE
-// ===========================
+  // ===========================
+  // CHILD MANAGEMENT ENDPOINTS
+  // ===========================
 
-interface WebSocketMessage {
-  type: string;
-  data: any;
-}
-
-class WebSocketService {
-  private ws: WebSocket | null = null;
-  private sessionId: string | null = null;
-  private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 5;
-  private onMessage: ((message: WebSocketMessage) => void) | null = null;
-  private onError: ((error: Event) => void) | null = null;
-
-  constructor(private baseURL: string = 'ws://localhost:8000') {}
-
-  // Connect to WebSocket for real-time session data
-  connect(sessionId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      try {
-        this.sessionId = sessionId;
-        this.ws = new WebSocket(`${this.baseURL}/ws/${sessionId}`);
-
-        this.ws.onopen = () => {
-          console.log('✅ WebSocket connected for session:', sessionId);
-          this.reconnectAttempts = 0;
-          resolve();
-        };
-
-        this.ws.onmessage = (event) => {
-          try {
-            const message: WebSocketMessage = JSON.parse(event.data);
-            if (this.onMessage) {
-              this.onMessage(message);
-            }
-          } catch (error) {
-            console.error('Error parsing WebSocket message:', error);
-          }
-        };
-
-        this.ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
-          if (this.onError) {
-            this.onError(error);
-          }
-        };
-
-        this.ws.onclose = () => {
-          console.log('WebSocket disconnected');
-          this.attemptReconnect();
-        };
-
-      } catch (error) {
-        reject(error);
-      }
+  // Create child profile
+  async createChild(childData: {
+    name: string;
+    age: number;
+    parentId: string;
+    seed?: string;
+  }): Promise<ApiResponse<ChildResponse>> {
+    return this.apiCall<ChildResponse>('/api/children', {
+      method: 'POST',
+      body: JSON.stringify(childData)
     });
   }
 
-  // Send frame data via WebSocket
-  sendFrameData(imageData: string): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'frame',
-        imageData: imageData
-      }));
+  // Get children for a parent
+  async getChildrenByParent(parentId: string): Promise<ApiResponse<{
+    success: boolean;
+    children: ChildResponse[];
+    count: number;
+  }>> {
+    return this.apiCall<{
+      success: boolean;
+      children: ChildResponse[];
+      count: number;
+    }>(`/api/children/${parentId}`);
+  }
+
+  // Get specific child by ID
+  async getChildById(childId: string): Promise<ApiResponse<{
+    success: boolean;
+    child: ChildResponse;
+  }>> {
+    return this.apiCall<{
+      success: boolean;
+      child: ChildResponse;
+    }>(`/api/children/child/${childId}`);
+  }
+
+  // Update child profile
+  async updateChild(
+    childId: string, 
+    updateData: ChildUpdate
+  ): Promise<ApiResponse<{
+    success: boolean;
+    child: ChildResponse;
+  }>> {
+    return this.apiCall<{
+      success: boolean;
+      child: ChildResponse;
+    }>(`/api/children/${childId}`, {
+      method: 'PUT',
+      body: JSON.stringify(updateData)
+    });
+  }
+
+  // Delete child profile
+  async deleteChild(childId: string): Promise<ApiResponse<{
+    success: boolean;
+    message: string;
+  }>> {
+    return this.apiCall<{
+      success: boolean;
+      message: string;
+    }>(`/api/children/${childId}`, {
+      method: 'DELETE'
+    });
+  }
+
+  // ===========================
+  // SESSION MANAGEMENT ENDPOINTS
+  // ===========================
+
+  // Start new study session
+  async startSession(sessionData: {
+    childId: string;
+    subject: string;
+    plannedDuration: number;
+    settings?: Partial<SessionSettings>;
+  }): Promise<ApiResponse<{
+    sessionId: string;
+    startTime: string;
+    message: string;
+  }>> {
+    return this.apiCall('/api/sessions/start', {
+      method: 'POST',
+      body: JSON.stringify(sessionData)
+    });
+  }
+
+  // End active study session
+  async endSession(sessionData: {
+    sessionId: string;
+    endTime: string;
+    actualDuration: number;
+    results?: {
+      focusedTime?: number;
+      averageAttentionScore?: number;
+      notes?: string;
+    };
+  }): Promise<ApiResponse<{
+    sessionSummary: {
+      sessionId: string;
+      duration: number;
+      focusedTime: number;
+      averageAttentionScore: number;
+      xpEarned: number;
+    };
+    message: string;
+  }>> {
+    return this.apiCall(`/api/sessions/${sessionData.sessionId}/end`, {
+      method: 'POST',
+      body: JSON.stringify(sessionData)
+    });
+  }
+
+  // Get specific session details
+  async getSession(sessionId: string): Promise<ApiResponse<{
+    session: StudySession;
+  }>> {
+    return this.apiCall(`/api/sessions/${sessionId}`);
+  }
+
+  // Get sessions for a child
+  async getChildSessions(
+    childId: string,
+    options?: {
+      limit?: number;
+      statusFilter?: 'active' | 'completed' | 'paused' | 'cancelled';
     }
-  }
-
-  // Send ping to keep connection alive
-  ping(): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'ping' }));
+  ): Promise<ApiResponse<{
+    sessions: StudySession[];
+    totalCount: number;
+  }>> {
+    const params = new URLSearchParams();
+    
+    if (options?.limit) {
+      params.append('limit', options.limit.toString());
     }
-  }
-
-  // Set message handler
-  setMessageHandler(handler: (message: WebSocketMessage) => void): void {
-    this.onMessage = handler;
-  }
-
-  // Set error handler
-  setErrorHandler(handler: (error: Event) => void): void {
-    this.onError = handler;
-  }
-
-  // Attempt to reconnect
-  private attemptReconnect(): void {
-    if (this.reconnectAttempts < this.maxReconnectAttempts && this.sessionId) {
-      this.reconnectAttempts++;
-      console.log(`Attempting to reconnect... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-      
-      setTimeout(() => {
-        this.connect(this.sessionId!);
-      }, Math.pow(2, this.reconnectAttempts) * 1000); // Exponential backoff
+    
+    if (options?.statusFilter) {
+      params.append('status_filter', options.statusFilter);
     }
+    
+    const queryString = params.toString();
+    const url = `/api/sessions/child/${childId}${queryString ? `?${queryString}` : ''}`;
+    
+    return this.apiCall(url);
   }
 
-  // Disconnect WebSocket
-  disconnect(): void {
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
-    this.sessionId = null;
-    this.reconnectAttempts = 0;
+  // Get session analytics for a child
+  async getChildAnalytics(
+    childId: string,
+    days: number = 7
+  ): Promise<ApiResponse<{
+    analytics: SessionAnalytics;
+    period: string;
+  }>> {
+    return this.apiCall(`/api/sessions/child/${childId}/analytics?days=${days}`);
   }
 
-  // Check if connected
-  isConnected(): boolean {
-    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  // Get all active sessions (admin)
+  async getActiveSessions(): Promise<ApiResponse<{
+    activeSessions: StudySession[];
+    count: number;
+  }>> {
+    return this.apiCall('/api/sessions/active');
+  }
+
+  // Pause session
+  async pauseSession(sessionId: string): Promise<ApiResponse<{
+    message: string;
+  }>> {
+    return this.apiCall(`/api/sessions/${sessionId}/pause`, {
+      method: 'POST'
+    });
+  }
+
+  // Resume session
+  async resumeSession(sessionId: string): Promise<ApiResponse<{
+    message: string;
+  }>> {
+    return this.apiCall(`/api/sessions/${sessionId}/resume`, {
+      method: 'POST'
+    });
+  }
+
+  // ===========================
+  // HEALTH CHECK
+  // ===========================
+
+  async healthCheck(): Promise<ApiResponse<any>> {
+    return this.apiCall<any>('/health');
   }
 }
 
 // ===========================
-// EXPORT SINGLETON INSTANCES
+// EXPORT SINGLETON INSTANCE
 // ===========================
 
-// Create singleton instances
 export const apiService = new ApiService();
-export const webSocketService = new WebSocketService();
 
-// Export types for use in components
+// Export types
 export type {
-  AnalysisResult,
-  InterventionData,
-  SessionData,
+  UserRegister,
+  UserLogin,
+  UserResponse,
+  ChildCreate,
+  ChildResponse,
+  ChildUpdate,
   ApiResponse,
-  WebSocketMessage
+  SessionSettings,
+  StudySession,
+  SessionAnalytics
 };
 
 // ===========================
-// REACT HOOKS FOR EASY USAGE
+// REACT HOOKS FOR API CALLS
 // ===========================
 
 import { useState, useEffect } from 'react';
@@ -472,69 +486,51 @@ export const useApiCall = <T>(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const execute = async () => {
+    setLoading(true);
+    setError(null);
+
+    const result = await apiCall();
+
+    if (result.success && result.data) {
+      setData(result.data);
+    } else {
+      setError(result.error || 'Unknown error');
+    }
+    setLoading(false);
+  };
+
   useEffect(() => {
-    let isMounted = true;
-
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-
-      const result = await apiCall();
-
-      if (isMounted) {
-        if (result.success && result.data) {
-          setData(result.data);
-        } else {
-          setError(result.error || 'Unknown error');
-        }
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-
-    return () => {
-      isMounted = false;
-    };
+    execute();
   }, dependencies);
 
-  return { data, loading, error };
+  return { data, loading, error, refetch: execute };
 };
 
-// Hook for WebSocket connection
-export const useWebSocket = (sessionId: string | null) => {
-  const [connected, setConnected] = useState(false);
-  const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null);
+// Hook for manual API calls (like form submissions)
+export const useApiMutation = <T, P = any>() => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<T | null>(null);
 
-  useEffect(() => {
-    if (!sessionId) return;
+  const mutate = async (
+    apiCall: (params: P) => Promise<ApiResponse<T>>,
+    params: P
+  ): Promise<ApiResponse<T>> => {
+    setLoading(true);
+    setError(null);
 
-    const connect = async () => {
-      try {
-        await webSocketService.connect(sessionId);
-        setConnected(true);
+    const result = await apiCall(params);
 
-        webSocketService.setMessageHandler((message) => {
-          setLastMessage(message);
-        });
+    if (result.success && result.data) {
+      setData(result.data);
+    } else {
+      setError(result.error || 'Unknown error');
+    }
+    
+    setLoading(false);
+    return result;
+  };
 
-        webSocketService.setErrorHandler(() => {
-          setConnected(false);
-        });
-
-      } catch (error) {
-        console.error('Failed to connect WebSocket:', error);
-        setConnected(false);
-      }
-    };
-
-    connect();
-
-    return () => {
-      webSocketService.disconnect();
-      setConnected(false);
-    };
-  }, [sessionId]);
-
-  return { connected, lastMessage };
+  return { mutate, loading, error, data };
 };
