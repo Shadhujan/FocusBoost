@@ -3,10 +3,24 @@
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from datetime import datetime
+import logging
 from firebase_admin import firestore
 from datetime import datetime
 import random
 import string
+import base64
+import io
+from PIL import Image
+import numpy as np
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 from .session_management.session_api import (
     start_study_session, end_study_session, get_session_details,
@@ -22,8 +36,10 @@ from .account_schema.schema import (
     ActiveSessionsResponse
 )
 from .user_account.auth import register_user, login_user, forgot_password, get_all_users
+from .ml_processing.ml_analyzer import ml_analyzer
 
 from .settings import settings
+
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
@@ -45,6 +61,68 @@ def generate_random_seed() -> str:
     """Generate random seed for avatar"""
     return ''.join(random.choices(string.ascii_letters + string.digits, k=10))
 
+
+# Pydantic models for ML endpoints
+class ImageAnalysisRequest(BaseModel):
+    sessionId: str
+    imageData: str  # base64 encoded image
+    timestamp: int = None
+
+class MLAnalysisResponse(BaseModel):
+    success: bool
+    analysis: dict = None
+    intervention: dict = None
+    error: str = None
+    
+# Simple ML simulation for now (we'll add real models later)
+def simulate_ml_analysis(image_data: str) -> dict:
+    """Simulate ML analysis - replace this with real models later"""
+    import random
+    import time
+    
+    # Simulate processing time
+    time.sleep(0.5)
+    
+    # Simulate realistic results
+    emotions = ['happy', 'neutral', 'sad', 'surprise']
+    learning_states = ['engagement', 'boredom', 'confusion', 'frustration']
+    
+    # Create realistic probabilities
+    emotion = random.choice(emotions)
+    learning_state = random.choice(learning_states)
+    
+    emotion_confidence = random.uniform(0.6, 0.95)
+    learning_confidence = random.uniform(0.6, 0.95)
+    
+    # Calculate attention score
+    attention_scores = {
+        'engagement': 0.9,
+        'confusion': 0.6,
+        'boredom': 0.3,
+        'frustration': 0.4
+    }
+    attention_score = attention_scores[learning_state] * learning_confidence
+    
+    return {
+        'emotion': {
+            'emotion': emotion,
+            'confidence': emotion_confidence,
+            'probabilities': {e: random.uniform(0.1, 0.9) if e == emotion else random.uniform(0.05, 0.2) for e in emotions}
+        },
+        'learningState': {
+            'learningState': learning_state,
+            'confidence': learning_confidence,
+            'probabilities': {s: random.uniform(0.1, 0.9) if s == learning_state else random.uniform(0.05, 0.2) for s in learning_states}
+        },
+        'attentionScore': attention_score,
+        'timestamp': int(time.time() * 1000),
+        'intervention': {
+            'needed': learning_state in ['boredom', 'confusion', 'frustration'] and learning_confidence > 0.7,
+            'type': 'engaging_quiz' if learning_state == 'boredom' else 'helpful_hint' if learning_state == 'confusion' else 'encouragement',
+            'reason': f'Child appears {learning_state}',
+            'urgency': 'medium'
+        }
+    }
 # ==========================================
 # YOUR EXISTING AUTH ENDPOINTS (unchanged)
 # ==========================================
@@ -425,6 +503,158 @@ async def resume_session(session_id: str):
             detail=f"Error resuming session: {str(e)}"
         )
 
+# ==========================================
+# ML ANALYSIS ENDPOINTS
+# ==========================================
+@app.post("/api/analyze-image", response_model=MLAnalysisResponse)
+async def analyze_image(request: ImageAnalysisRequest):
+    # """
+    # Analyze uploaded image for emotion and learning state detection
+    # Currently using simulation - will connect to real models next
+    # """
+    try:
+        logger.info(f"📸 Analyzing image for session: {request.sessionId}")
+        print("🚀 Received ML analysis request for session:", request.sessionId)
+        
+        # For now, use simulation (we'll add real ML models next)
+        #analysis_result = simulate_ml_analysis(request.imageData)
+
+        # Use real ML analyzer
+        analysis_result = ml_analyzer.analyze_image(request.imageData)
+        
+        # Store the analysis data in database
+        db = firestore.client()
+        
+        # Save to session_data collection for real-time tracking
+        session_data = {
+            'sessionId': request.sessionId,
+            'timestamp': analysis_result['timestamp'],
+            'emotion': analysis_result['emotion']['emotion'],+++
+            'emotionConfidence': analysis_result['emotion']['confidence'],
+            'learningState': analysis_result['learningState']['learningState'],
+            'learningConfidence': analysis_result['learningState']['confidence'],
+            'attentionScore': analysis_result['attentionScore'],
+            'emotionProbabilities': analysis_result['emotion']['probabilities'],
+            'learningProbabilities': analysis_result['learningState']['probabilities'],
+            'createdAt': datetime.utcnow().isoformat()
+        }
+        
+        # Add to database
+        db.collection('session_data').add(session_data)
+        
+        # Check if intervention is needed
+        intervention_data = None
+        if analysis_result['intervention']['needed']:
+            intervention_data = {
+                'sessionId': request.sessionId,
+                'type': analysis_result['intervention']['type'],
+                'reason': analysis_result['intervention']['reason'],
+                'urgency': analysis_result['intervention']['urgency'],
+                'timestamp': analysis_result['timestamp'],
+                'triggered': True
+            }
+            
+            # Save intervention to database
+            db.collection('interventions').add(intervention_data)
+            
+            logger.warning(f"⚠️ Intervention needed: {intervention_data['type']} - {intervention_data['reason']}")
+        
+        logger.info(f"✅ Analysis complete for session {request.sessionId}")
+        logger.info(f"😊 Emotion: {analysis_result['emotion']['emotion']} ({analysis_result['emotion']['confidence']:.2f})")
+        logger.info(f"🧠 Learning State: {analysis_result['learningState']['learningState']} ({analysis_result['learningState']['confidence']:.2f})")
+        logger.info(f"📊 Attention Score: {analysis_result['attentionScore']:.2f}")
+        print("✅ Analysis result:", analysis_result)
+        
+        return MLAnalysisResponse(
+            success=True,
+            analysis=analysis_result,
+            intervention=intervention_data
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Error analyzing image: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"ML analysis failed: {str(e)}"
+        )
+
+@app.get("/api/sessions/{session_id}/ml-data")
+async def get_session_ml_data(session_id: str, limit: int = 50):
+    """
+    Get ML analysis data for a specific session
+    """
+    try:
+        db = firestore.client()
+        
+        # Get recent ML data for this session
+        docs = db.collection('session_data')\
+                .where('sessionId', '==', session_id)\
+                .order_by('timestamp', direction=firestore.Query.DESCENDING)\
+                .limit(limit)\
+                .stream()
+        
+        ml_data = [doc.to_dict() for doc in docs]
+        
+        return {
+            "success": True,
+            "data": ml_data,
+            "count": len(ml_data)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching ML data: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/sessions/{session_id}/interventions")
+async def get_session_interventions(session_id: str):
+    """
+    Get intervention history for a specific session
+    """
+    try:
+        db = firestore.client()
+        
+        # Get interventions for this session
+        docs = db.collection('interventions')\
+                .where('sessionId', '==', session_id)\
+                .order_by('timestamp', direction=firestore.Query.DESCENDING)\
+                .stream()
+        
+        interventions = [doc.to_dict() for doc in docs]
+        
+        return {
+            "success": True,
+            "interventions": interventions,
+            "count": len(interventions)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching interventions: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/ml/status")
+async def get_ml_status():
+    """
+    Check ML system status
+    """
+    try:
+        return {
+            "success": True,
+            "models_loaded": True,  # Simulation mode
+            "simulation_mode": True,
+            "emotion_model": True,
+            "learning_model": True,
+            "emotion_labels": ['happy', 'neutral', 'sad', 'surprise'],
+            "learning_labels": ['engagement', 'boredom', 'confusion', 'frustration'],
+            "message": "ML system ready (simulation mode)"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error checking ML status: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "models_loaded": False
+        }
 # ==========================================
 # UPDATED HEALTH CHECK
 # ==========================================

@@ -115,6 +115,44 @@ interface SessionAnalytics {
 }
 
 // ===========================
+// ML ANALYSIS TYPES
+// ===========================
+
+interface MLAnalysisRequest {
+  sessionId: string;
+  imageData: string; // base64 encoded image
+  timestamp: number;
+}
+
+interface MLAnalysisResult {
+  emotion: {
+    emotion: string;
+    confidence: number;
+    probabilities: Record<string, number>;
+  };
+  learningState: {
+    learningState: string;
+    confidence: number;
+    probabilities: Record<string, number>;
+  };
+  attentionScore: number;
+  timestamp: number;
+  intervention?: {
+    needed: boolean;
+    type: string;
+    reason: string;
+    urgency: string;
+  };
+}
+
+interface MLAnalysisResponse {
+  success: boolean;
+  analysis?: MLAnalysisResult;
+  intervention?: any;
+  error?: string;
+}
+
+// ===========================
 // API SERVICE CLASS
 // ===========================
 
@@ -443,6 +481,111 @@ class ApiService {
   }
 
   // ===========================
+  // ML ANALYSIS ENDPOINTS
+  // ===========================
+  
+   // Analyze image using backend ML models (with detailed logging)
+   async analyzeImage(request: MLAnalysisRequest): Promise<ApiResponse<MLAnalysisResult>> {
+    try {
+      console.log('📤 Sending image for ML analysis...', {
+        sessionId: request.sessionId,
+        imageSize: request.imageData.length,
+        timestamp: request.timestamp
+      });
+      
+      const response = await this.apiCall<MLAnalysisResponse>('/api/analyze-image', {
+        method: 'POST',
+        body: JSON.stringify(request)
+      });
+
+      if (response.success && response.data?.analysis) {
+        const analysis = response.data.analysis;
+        console.log('📥 ML Analysis successful:', {
+          emotion: analysis.emotion.emotion,
+          emotionConfidence: Math.round(analysis.emotion.confidence * 100) + '%',
+          learningState: analysis.learningState.learningState,
+          learningConfidence: Math.round(analysis.learningState.confidence * 100) + '%',
+          attentionScore: Math.round(analysis.attentionScore * 100) + '%'
+        });
+        
+        // Log intervention if needed
+        if (analysis.intervention?.needed) {
+          console.warn('⚠️ Intervention triggered:', analysis.intervention);
+        }
+        
+        return { 
+          success: true, 
+          data: analysis 
+        };
+      } else {
+        return { 
+          success: false, 
+          error: response.error || response.data?.error || 'ML analysis failed' 
+        };
+      }
+    } catch (error) {
+      console.error('❌ Error in ML analysis:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to analyze image' 
+      };
+    }
+  }
+
+  // Check ML models status
+  async checkMLStatus(): Promise<ApiResponse<any>> {
+    try {
+      const response = await this.apiCall<any>('/api/ml/status');
+
+      if (response.success && response.data) {
+        console.log('🤖 ML Status:', response.data);
+        return {
+          success: true,
+          data: response.data
+        };
+      } else {
+        return {
+          success: false,
+          error: response.error || 'ML status check failed'
+        };
+      }
+    } catch (error) {
+      console.error('Error checking ML status:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to check ML status' 
+      };
+    }
+  }
+
+  // Get ML data for a session (existing method enhanced)
+  async getSessionMLData(sessionId: string, limit: number = 50): Promise<ApiResponse<any[]>> {
+    try {
+      return await this.apiCall<any[]>(`/api/sessions/${sessionId}/ml-data?limit=${limit}`);
+    } catch (error) {
+      console.error('Error fetching session ML data:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to fetch ML data' 
+      };
+    }
+  }
+
+  // Get interventions for a session (existing method enhanced)
+  async getSessionInterventions(sessionId: string): Promise<ApiResponse<any[]>> {
+    try {
+      return await this.apiCall<any[]>(`/api/sessions/${sessionId}/interventions`);
+    } catch (error) {
+      console.error('Error fetching interventions:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to fetch interventions' 
+      };
+    }
+  }
+  
+
+  // ===========================
   // HEALTH CHECK
   // ===========================
 
@@ -468,7 +611,8 @@ export type {
   ApiResponse,
   SessionSettings,
   StudySession,
-  SessionAnalytics
+  SessionAnalytics,
+  MLAnalysisRequest, MLAnalysisResult, MLAnalysisResponse
 };
 
 // ===========================

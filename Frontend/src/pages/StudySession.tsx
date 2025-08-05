@@ -8,16 +8,18 @@ import {
   ArrowLeft, 
   BookOpen, 
   Shield, 
-  Check, 
+  // Check, 
   Star, 
   Trophy,
   Play,
   Square,
-  Pause
+  // Pause
 } from 'lucide-react';
 import Logo from '../components/shared/Logo';
 import VideoFeed from '../components/child/VideoFeed';
+// import VideoDebug from '../components/child/VideoDebug';
 import QuizModal from '../components/child/QuizModal';
+// import MLStatusTest from '../components/test/MLStatusTest';
 // import FocusTimer from '../components/child/FocusTimer';
 import FocusPet from '../components/child/FocusPet';
 import { useUser } from '../context/UserContext';
@@ -414,14 +416,14 @@ const StudySessionPage: React.FC = () => {
           </motion.div>
         )}
 
-        {sessionStarted && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-              <VideoFeed 
-                sessionId={activeSession?.sessionId || ''} 
-                onAttentionChange={handleAttentionChange} 
-              />
-            </div>
+          {sessionStarted && activeSession?.sessionId && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <VideoFeed 
+                  sessionId={activeSession.sessionId}
+                  onAttentionChange={handleAttentionChange}
+                />
+              </div>
             
             <div className="space-y-6">
               <FocusPet attentionScore={attentionScore} />
@@ -464,6 +466,11 @@ const StudySessionPage: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* With this for the test: */}
+          {/* {sessionStarted && (
+            <VideoDebug />
+          )} */}
       </main>
       
       <QuizModal 

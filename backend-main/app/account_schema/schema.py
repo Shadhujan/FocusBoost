@@ -1,5 +1,4 @@
 # app/account_schema/schema.py
-# Updated with session management schemas
 
 from pydantic import BaseModel, EmailStr, constr, Field
 from typing import Optional, Dict, List, Any
