@@ -529,7 +529,7 @@ async def analyze_image(request: ImageAnalysisRequest):
         session_data = {
             'sessionId': request.sessionId,
             'timestamp': analysis_result['timestamp'],
-            'emotion': analysis_result['emotion']['emotion'],+++
+            'emotion': analysis_result['emotion']['emotion'],
             'emotionConfidence': analysis_result['emotion']['confidence'],
             'learningState': analysis_result['learningState']['learningState'],
             'learningConfidence': analysis_result['learningState']['confidence'],
