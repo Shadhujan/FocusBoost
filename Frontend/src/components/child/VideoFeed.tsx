@@ -190,7 +190,7 @@ const VideoFeed: React.FC<VideoFeedProps> = ({
           autoPlay
           playsInline
           muted
-          className="w-full h-64 object-cover bg-gray-200"
+          className="w-full h-120 object-cover bg-gray-200"
           onLoadedMetadata={() => {
             setIsVideoReady(true);
             videoRef.current?.play();
