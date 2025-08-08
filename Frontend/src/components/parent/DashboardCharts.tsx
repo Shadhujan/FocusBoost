@@ -13,6 +13,7 @@ import {
   Tooltip,
   Legend,
   ArcElement,
+  Filler,
 } from 'chart.js';
 import { RefreshCw, Calendar, Clock, TrendingUp, BarChart3 } from 'lucide-react';
 import { apiService, StudySession, SessionAnalytics } from '../../services/apiService';
@@ -25,7 +26,8 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  ArcElement
+  ArcElement,
+  Filler
 );
 
 interface DashboardChartsProps {
@@ -349,7 +351,7 @@ const DashboardCharts: React.FC<DashboardChartsProps> = ({ childId }) => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {sessions.slice(-5).reverse().map((session) => (
+                {sessions.slice(-5).reverse().map((session, index) => (
                   <tr key={session.sessionId} className="hover:bg-gray-50">
                     <td className="px-4 py-4 whitespace-nowrap text-sm">
                       {formatDate(session.startTime)}

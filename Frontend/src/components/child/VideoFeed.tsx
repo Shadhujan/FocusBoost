@@ -5,14 +5,18 @@ interface VideoFeedProps {
   sessionId: string;
   onAttentionChange?: (attentionScore: number) => void;
   onAnalysisUpdate?: (analysis: any) => void;
+  onInterventionNeeded?: (intervention: any) => void;
   isActive?: boolean;
+  isPaused?: boolean;
 }
 
 const VideoFeed: React.FC<VideoFeedProps> = ({ 
   sessionId, 
   onAttentionChange, 
   onAnalysisUpdate,
-  isActive = true 
+  onInterventionNeeded,
+  isActive = true,
+  isPaused = false
 }) => {
   console.log("VideoFeed component rendered!");
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -21,6 +25,8 @@ const VideoFeed: React.FC<VideoFeedProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [analysisCount, setAnalysisCount] = useState(0);
+  const [nextSampleInterval, setNextSampleInterval] = useState(30000); // Default 30s
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -47,24 +53,39 @@ const VideoFeed: React.FC<VideoFeedProps> = ({
     };
   }, []);
 
-  // ML Polling Effect
+  // Modified polling effect with dynamic intervals
   useEffect(() => {
-    if (isVideoReady) {
-      console.log("ML polling loop STARTED!");
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    if (isVideoReady && isActive && !isPaused) {
+      console.log(`🎬 ML analysis scheduled for ${nextSampleInterval/1000}s intervals`);
 
       // Analyze immediately
       captureAndAnalyze();
 
-      // Then every 5 seconds
-      const interval = setInterval(() => {
-        captureAndAnalyze();
-      }, 5000);
+      // Set up next analysis based on dynamic interval
+      const scheduleNextAnalysis = () => {
+        intervalRef.current = setTimeout(() => {
+          captureAndAnalyze();
+          scheduleNextAnalysis(); // Reschedule with potentially new interval
+        }, nextSampleInterval);
+      };
 
-      return () => clearInterval(interval);
+      scheduleNextAnalysis();
     }
-  }, [isVideoReady]);
 
-  // Capture and analyze function
+    return () => {
+      if (intervalRef.current) {
+        clearTimeout(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [isVideoReady, isActive, isPaused, nextSampleInterval, sessionId]);
+
+  // Enhanced capture and analyze function
   const captureAndAnalyze = async () => {
     if (!videoRef.current || isProcessing) return;
 
@@ -116,6 +137,18 @@ const VideoFeed: React.FC<VideoFeedProps> = ({
           learningState: `${analysis.learningState.learningState} (${Math.round(analysis.learningState.confidence * 100)}%)`,
           attentionScore: `${Math.round(analysis.attentionScore * 100)}%`
         });
+
+        // Update next sampling interval
+        if (analysis.nextSampleInterval) {
+          console.log(`⏱️ Next sample interval: ${analysis.nextSampleInterval}s`);
+          setNextSampleInterval(analysis.nextSampleInterval * 1000);
+        }
+
+        // Check for intervention
+        if (analysis.intervention?.needed && onInterventionNeeded) {
+          console.log(`🚨 Intervention needed: ${analysis.intervention.type}`);
+          onInterventionNeeded(analysis.intervention);
+        }
 
         setCurrentAnalysis(analysis);
         setAnalysisCount(prev => prev + 1);
@@ -190,13 +223,24 @@ const VideoFeed: React.FC<VideoFeedProps> = ({
           autoPlay
           playsInline
           muted
-          className="w-full h-120 object-cover bg-gray-200"
+          className={`w-full h-120 object-cover bg-gray-200 ${isPaused ? 'opacity-50' : ''}`}
           onLoadedMetadata={() => {
             setIsVideoReady(true);
             videoRef.current?.play();
             console.log("📹 Video stream loaded successfully");
           }}
         />
+        
+        {/* Pause overlay */}
+        {isPaused && (
+          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+            <div className="bg-white text-gray-800 px-4 py-2 rounded-lg text-center">
+              <div className="text-2xl mb-2">⏸️</div>
+              <div className="font-semibold">Analysis Paused</div>
+              <div className="text-sm text-gray-600">Resume to continue monitoring</div>
+            </div>
+          </div>
+        )}
         
         {/* ML Results Overlay */}
         {currentAnalysis && (
@@ -273,9 +317,10 @@ const VideoFeed: React.FC<VideoFeedProps> = ({
         <p className="text-sm text-gray-600">
           🤖 <strong>AI Analysis:</strong> {isVideoReady ? 'Active' : 'Loading...'} 
           {analysisCount > 0 && ` • ${analysisCount} analyses completed`}
+          {isPaused && ' • Paused'}
         </p>
         <p className="text-xs text-gray-500 mt-1">
-          Emotion + Learning State Detection • Backend ML Processing • Every 5 seconds
+          Emotion + Learning State Detection • Dynamic Intervals • Next: {Math.round(nextSampleInterval/1000)}s
         </p>
       </div>
     </div>

@@ -4,7 +4,7 @@
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 from firebase_admin import firestore
 from datetime import datetime
@@ -14,6 +14,10 @@ import base64
 import io
 from PIL import Image
 import numpy as np
+from typing import Dict, Any
+from .attention_tracking.attention_manager import attention_manager
+from .quiz_management.gemini_quiz_generator import gemini_quiz_generator
+import asyncio
 
 # Configure logging
 logging.basicConfig(
@@ -33,7 +37,7 @@ from .account_schema.schema import (
     ChildCreate, ChildResponse, ChildUpdate,
     StartSessionRequest, EndSessionRequest, StartSessionResponse, 
     EndSessionResponse, SessionListResponse, SessionAnalyticsResponse,
-    ActiveSessionsResponse
+    ActiveSessionsResponse, QuizRequest, QuizResponse
 )
 from .user_account.auth import register_user, login_user, forgot_password, get_all_users
 from .ml_processing.ml_analyzer import ml_analyzer
@@ -504,28 +508,268 @@ async def resume_session(session_id: str):
         )
 
 # ==========================================
+# QUIZ MANAGEMENT ENDPOINTS
+# ==========================================
+
+@app.post("/api/quiz/generate", response_model=QuizResponse)
+async def generate_quiz(request: QuizRequest):
+    """Generate a dynamic quiz using Gemini AI"""
+    try:
+        # Log incoming request for validation debugging
+        logger.info(f"📝 Quiz request received: {request.dict()}")
+        # Get child details from database
+        db = firestore.client()
+        child_doc = db.collection('children').document(request.childId).get()
+        
+        if not child_doc.exists:
+            raise HTTPException(status_code=404, detail="Child not found")
+        
+        child_data = child_doc.to_dict()
+        
+        # Get current session context
+        session_doc = db.collection('study_sessions').document(request.sessionId).get()
+        session_data = session_doc.to_dict() if session_doc.exists else {}
+        
+        # Calculate session duration (robust timezone-safe handling)
+        start_time = session_data.get('startTime')
+        if start_time:
+            try:
+                # Parse Firestore or ISO string
+                if isinstance(start_time, str):
+                    start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                elif isinstance(start_time, datetime):
+                    start_dt = start_time
+                else:
+                    # Fallback for Firestore Timestamp-like objects
+                    # Attempt to access .timestamp() if available
+                    ts = getattr(start_time, 'timestamp', None)
+                    if callable(ts):
+                        start_dt = datetime.fromtimestamp(ts())
+                    else:
+                        raise ValueError("Unsupported startTime type")
+
+                # Ensure timezone-aware
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=timezone.utc)
+
+                now_utc = datetime.now(timezone.utc)
+                duration_seconds = int((now_utc - start_dt).total_seconds())
+                duration_minutes = max(duration_seconds // 60, 0)
+            except Exception as e:
+                logger.warning(f"Failed to parse startTime '{start_time}': {e}")
+                duration_minutes = 0
+        else:
+            duration_minutes = 0
+        
+        # Prepare attention state from request
+        attention_state = {
+            'attention_score': request.attentionScore / 100,  # Convert to 0-1 scale
+            'learning_state': request.learningState if hasattr(request, 'learningState') else 'neutral'
+        }
+        
+        # Prepare session context
+        session_context = {
+            'duration_minutes': duration_minutes,
+            'subject': request.subject,
+            'quiz_count': session_data.get('quizzesCompleted', 0)
+        }
+        
+        # Generate quiz (use fallback if Gemini not initialized)
+        logger.info(f"🎯 Generating quiz for {child_data['name']} in {request.subject}")
+
+        if getattr(gemini_quiz_generator, 'initialized', False):
+            quiz = await gemini_quiz_generator.generate_quiz(
+                subject=request.subject,
+                child_age=child_data['age'],
+                attention_state=attention_state,
+                session_context=session_context
+            )
+        else:
+            # Fallback lightweight quiz when Gemini isn't available
+            subj = (request.subject or 'general').lower()
+            difficulty = 'easy' if attention_state['attention_score'] < 0.3 else 'medium'
+            timestamp_id = int(datetime.utcnow().timestamp())
+
+            if subj in ['mathematics', 'math']:
+                import random as _rnd
+                a, b = _rnd.randint(3, 12), _rnd.randint(2, 10)
+                correct = a + b
+                options = [correct]
+                while len(options) < 4:
+                    candidate = correct + _rnd.randint(-5, 5)
+                    if candidate not in options:
+                        options.append(candidate)
+                quiz = {
+                    'quiz_id': f"fallback_{timestamp_id}",
+                    'question': f"What is {a} + {b}?",
+                    'options': options,
+                    'correct_index': 0,
+                    'hint': 'Try counting on your fingers or drawing dots!',
+                    'explanation': f"Adding {a} and {b} makes {correct}.",
+                    'fun_fact': 'The plus sign "+" has been used for over 500 years!',
+                    'xp_reward': 10,
+                    'difficulty': difficulty,
+                }
+            elif subj in ['reading', 'literature']:
+                quiz = {
+                    'quiz_id': f"fallback_{timestamp_id}",
+                    'question': "Which word rhymes with 'cat'?",
+                    'options': ['bat', 'dog', 'fish', 'tree'],
+                    'correct_index': 0,
+                    'hint': 'Rhyming words end with the same sound.',
+                    'explanation': "Cat and bat both end with the 'at' sound.",
+                    'fun_fact': 'Rhyming helps your brain remember!',
+                    'xp_reward': 10,
+                    'difficulty': difficulty,
+                }
+            else:
+                quiz = {
+                    'quiz_id': f"fallback_{timestamp_id}",
+                    'question': "What color is the sky on a clear, sunny day?",
+                    'options': ['Blue', 'Green', 'Red', 'Yellow'],
+                    'correct_index': 0,
+                    'hint': 'Look up outside on a sunny day!',
+                    'explanation': 'The sky appears blue because of how sunlight scatters.',
+                    'fun_fact': 'Sunsets look red and orange due to a similar effect!',
+                    'xp_reward': 10,
+                    'difficulty': difficulty,
+                }
+        
+        # Store quiz in database for tracking
+        quiz_record = {
+            'sessionId': request.sessionId,
+            'childId': request.childId,
+            'quiz': quiz,
+            'generatedAt': datetime.utcnow().isoformat(),
+            'attentionScore': request.attentionScore
+        }
+        
+        db.collection('generated_quizzes').add(quiz_record)
+        
+        return QuizResponse(
+            success=True,
+            quiz=quiz
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Quiz generation failed: {str(e)}")
+        return QuizResponse(
+            success=False,
+            error=str(e)
+        )
+
+@app.post("/api/quiz/submit")
+async def submit_quiz_answer(data: Dict[str, Any]):
+    """Submit quiz answer and calculate rewards"""
+    try:
+        session_id = data.get('sessionId')
+        quiz_id = data.get('quizId')
+        selected_answer = data.get('selectedAnswer')
+        correct_answer = data.get('correctAnswer')
+        time_taken = data.get('timeTaken', 0)
+        xp_reward = data.get('xpReward', 10)
+        
+        # Calculate actual XP based on correctness and speed
+        is_correct = selected_answer == correct_answer
+        actual_xp = xp_reward if is_correct else 2  # Participation points
+        
+        # Bonus for quick correct answers
+        if is_correct and time_taken < 10:
+            actual_xp += 5
+        elif is_correct and time_taken < 20:
+            actual_xp += 3
+        
+        # Store quiz result
+        db = firestore.client()
+        quiz_result = {
+            'sessionId': session_id,
+            'quizId': quiz_id,
+            'correct': is_correct,
+            'timeTaken': time_taken,
+            'xpEarned': actual_xp,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        
+        db.collection('quiz_results').add(quiz_result)
+        
+        # Update session quiz count
+        session_ref = db.collection('study_sessions').document(session_id)
+        session_ref.update({
+            'quizzesCompleted': firestore.Increment(1),
+            'totalXpEarned': firestore.Increment(actual_xp)
+        })
+        
+        # Prepare encouraging message
+        if is_correct:
+            messages = [
+                "Awesome job! 🌟",
+                "You're a superstar! ⭐",
+                "Brilliant answer! 🎉",
+                "Keep it up, genius! 🧠",
+                "Fantastic work! 🎊"
+            ]
+            message = random.choice(messages)
+        else:
+            messages = [
+                "Nice try! You're learning! 💪",
+                "Good effort! Keep going! 🚀",
+                "Almost there! Try again! 💫",
+                "You're doing great! 🌈"
+            ]
+            message = random.choice(messages)
+        
+        return {
+            "success": True,
+            "correct": is_correct,
+            "xpEarned": actual_xp,
+            "message": message,
+            "totalXp": session_ref.get().to_dict().get('totalXpEarned', actual_xp)
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error submitting quiz: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/quiz/status")
+async def get_quiz_status():
+    """Check if quiz generation is available"""
+    try:
+        is_ready = gemini_quiz_generator.initialized
+        
+        return {
+            "success": True,
+            "gemini_ready": is_ready,
+            "api_key_configured": bool(settings.GEMINI_API_KEY),
+            "message": "Quiz generation ready" if is_ready else "Gemini API not configured"
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+# ==========================================
 # ML ANALYSIS ENDPOINTS
 # ==========================================
 @app.post("/api/analyze-image", response_model=MLAnalysisResponse)
 async def analyze_image(request: ImageAnalysisRequest):
-    # """
-    # Analyze uploaded image for emotion and learning state detection
-    # Currently using simulation - will connect to real models next
-    # """
     try:
         logger.info(f"📸 Analyzing image for session: {request.sessionId}")
         print("🚀 Received ML analysis request for session:", request.sessionId)
-        
-        # For now, use simulation (we'll add real ML models next)
-        #analysis_result = simulate_ml_analysis(request.imageData)
 
-        # Use real ML analyzer
+        
+        # Get ML analysis
         analysis_result = ml_analyzer.analyze_image(request.imageData)
         
-        # Store the analysis data in database
-        db = firestore.client()
+        # Process through attention manager
+        attention_response = attention_manager.add_analysis(
+            request.sessionId, 
+            analysis_result
+        )
         
-        # Save to session_data collection for real-time tracking
+        # Store in database as before
+        db = firestore.client()
         session_data = {
             'sessionId': request.sessionId,
             'timestamp': analysis_result['timestamp'],
@@ -534,49 +778,30 @@ async def analyze_image(request: ImageAnalysisRequest):
             'learningState': analysis_result['learningState']['learningState'],
             'learningConfidence': analysis_result['learningState']['confidence'],
             'attentionScore': analysis_result['attentionScore'],
-            'emotionProbabilities': analysis_result['emotion']['probabilities'],
-            'learningProbabilities': analysis_result['learningState']['probabilities'],
+            'nextSampleInterval': attention_response['next_sample_interval'],
+            'interventionSuggested': attention_response['intervention']['needed'],
             'createdAt': datetime.utcnow().isoformat()
         }
-        
-        # Add to database
+
+        # Store in database
         db.collection('session_data').add(session_data)
         
-        # Check if intervention is needed
-        intervention_data = None
-        if analysis_result['intervention']['needed']:
-            intervention_data = {
-                'sessionId': request.sessionId,
-                'type': analysis_result['intervention']['type'],
-                'reason': analysis_result['intervention']['reason'],
-                'urgency': analysis_result['intervention']['urgency'],
-                'timestamp': analysis_result['timestamp'],
-                'triggered': True
-            }
-            
-            # Save intervention to database
-            db.collection('interventions').add(intervention_data)
-            
-            logger.warning(f"⚠️ Intervention needed: {intervention_data['type']} - {intervention_data['reason']}")
+        # Enhance response with intelligent recommendations
+        analysis_result['nextSampleInterval'] = attention_response['next_sample_interval']
+        analysis_result['intervention'] = attention_response['intervention']
+        analysis_result['metrics'] = attention_response['metrics']
         
-        logger.info(f"✅ Analysis complete for session {request.sessionId}")
-        logger.info(f"😊 Emotion: {analysis_result['emotion']['emotion']} ({analysis_result['emotion']['confidence']:.2f})")
-        logger.info(f"🧠 Learning State: {analysis_result['learningState']['learningState']} ({analysis_result['learningState']['confidence']:.2f})")
-        logger.info(f"📊 Attention Score: {analysis_result['attentionScore']:.2f}")
-        print("✅ Analysis result:", analysis_result)
+        logger.info(f"✅ Analysis complete - Next sample in {attention_response['next_sample_interval']}s")
         
         return MLAnalysisResponse(
             success=True,
             analysis=analysis_result,
-            intervention=intervention_data
+            intervention=attention_response['intervention']
         )
         
     except Exception as e:
         logger.error(f"❌ Error analyzing image: {str(e)}")
-        raise HTTPException(
-            status_code=500, 
-            detail=f"ML analysis failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"ML analysis failed: {str(e)}")
 
 @app.get("/api/sessions/{session_id}/ml-data")
 async def get_session_ml_data(session_id: str, limit: int = 50):
@@ -681,6 +906,7 @@ async def health_check():
                 "authentication": "enabled",
                 "child_management": "enabled",
                 "session_management": "enabled",
+                "quiz_management": "enabled",
                 "firebase": "connected"
             },
             "endpoints": {
@@ -701,6 +927,11 @@ async def health_check():
                     "GET /api/sessions/active",
                     "POST /api/sessions/{session_id}/pause",
                     "POST /api/sessions/{session_id}/resume"
+                ],
+                "quizzes": [
+                    "POST /api/quiz/generate",
+                    "POST /api/quiz/submit",
+                    "GET /api/quiz/status"
                 ]
             },
             "data": {

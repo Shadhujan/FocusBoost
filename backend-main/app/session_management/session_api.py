@@ -365,7 +365,7 @@ async def update_daily_analytics(child_id: str, session_duration: int):
             # Update existing stats
             daily_stats['totalSessions'] = daily_stats.get('totalSessions', 0) + 1
             daily_stats['totalStudyTime'] = daily_stats.get('totalStudyTime', 0) + session_duration
-            daily_stats['averageSessionLength'] = daily_stats['totalStudyTime'] / daily_stats['totalSessions']
+            daily_stats['averageSessionLength'] = int(daily_stats['totalStudyTime'] / daily_stats['totalSessions'])
         else:
             # Create new analytics
             daily_stats = {
@@ -441,7 +441,7 @@ def calculate_session_analytics(sessions: List[Dict]) -> Dict[str, Any]:
         'totalSessions': len(sessions),
         'completedSessions': len(completed_sessions),
         'totalStudyTime': total_time,
-        'averageSessionLength': total_time / len(completed_sessions) if completed_sessions else 0,
+        'averageSessionLength': int(total_time / len(completed_sessions)) if completed_sessions else 0,
         'averageFocusScore': avg_focus,
         'mostStudiedSubject': most_studied,
         'subjectDistribution': subjects

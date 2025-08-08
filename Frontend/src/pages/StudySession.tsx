@@ -14,6 +14,9 @@ import {
   Play,
   Square,
   // Pause
+  Lightbulb,
+  Coffee,
+  AlertCircle
 } from 'lucide-react';
 import Logo from '../components/shared/Logo';
 import VideoFeed from '../components/child/VideoFeed';
@@ -41,6 +44,7 @@ const StudySessionPage: React.FC = () => {
   
   // Real-time data
   const [attentionScore, setAttentionScore] = useState(100);
+  const [currentLearningState, setCurrentLearningState] = useState<string>('neutral');
   const [sessionTime, setSessionTime] = useState(0);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [xpEarned, setXpEarned] = useState(0);
@@ -48,6 +52,9 @@ const StudySessionPage: React.FC = () => {
   // UI state
   const [showQuiz, setShowQuiz] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [interventionQueue, setInterventionQueue] = useState<any[]>([]);
+  const [isMLPaused, setIsMLPaused] = useState(false);
+  const [currentIntervention, setCurrentIntervention] = useState<any>(null);
 
   // Redirect if no child is selected
   useEffect(() => {
@@ -88,6 +95,73 @@ const StudySessionPage: React.FC = () => {
     
     return () => clearTimeout(quizTimer);
   }, [sessionStarted, sessionEnded, showQuiz]);
+
+  // Intervention handling
+  const handleInterventionNeeded = (intervention: any) => {
+    console.log('📢 Intervention requested:', intervention);
+    
+    // Add to queue
+    setInterventionQueue(prev => [...prev, intervention]);
+    
+    switch (intervention.type) {
+      case 'engaging_quiz':
+        handleQuizOpen();
+        break;
+      case 'helpful_hint':
+        showHint(intervention.reason);
+        setTimeout(() => handleQuizOpen(), 5000); // Quiz after hint
+        break;
+      case 'break_suggestion':
+        showBreakSuggestion();
+        break;
+      case 'attention_check':
+        handleQuizOpen(); // Simple quiz to re-engage
+        break;
+      default:
+        console.log('Unknown intervention type:', intervention.type);
+    }
+  };
+
+  const handleQuizOpen = () => {
+    setShowQuiz(true);
+    setIsMLPaused(true); // Pause ML during quiz
+  };
+
+  const handleQuizClose = () => {
+    setShowQuiz(false);
+    setIsMLPaused(false); // Resume ML after quiz
+  };
+
+  const showHint = (reason: string) => {
+    setCurrentIntervention({
+      type: 'hint',
+      message: reason,
+      icon: Lightbulb
+    });
+    
+    setTimeout(() => {
+      setCurrentIntervention(null);
+    }, 5000);
+  };
+
+  const showBreakSuggestion = () => {
+    setCurrentIntervention({
+      type: 'break',
+      message: "Time for a quick break! Take a deep breath and stretch.",
+      icon: Coffee
+    });
+    
+    setTimeout(() => {
+      setCurrentIntervention(null);
+    }, 8000);
+  };
+
+  const handleAnalysisUpdate = (analysis: any) => {
+    console.log('📊 Analysis update:', analysis);
+    setAttentionScore(analysis.attentionScore * 100);
+    setCurrentLearningState(analysis.learningState || 'neutral');
+    // Handle analysis updates if needed
+  };
 
   const handleStartSession = async () => {
     if (!selectedChild) return;
@@ -398,6 +472,12 @@ const StudySessionPage: React.FC = () => {
                   <div className="text-2xl font-bold text-green-600">{Math.round(attentionScore)}%</div>
                   <div className="text-xs text-gray-600">Focus Score</div>
                 </div>
+                {interventionQueue.length > 0 && (
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600">{interventionQueue.length}</div>
+                    <div className="text-xs text-gray-600">Helps Given</div>
+                  </div>
+                )}
               </div>
 
               <button
@@ -422,6 +502,9 @@ const StudySessionPage: React.FC = () => {
                 <VideoFeed 
                   sessionId={activeSession.sessionId}
                   onAttentionChange={handleAttentionChange}
+                  onInterventionNeeded={handleInterventionNeeded}
+                  onAnalysisUpdate={handleAnalysisUpdate}
+                  isPaused={isMLPaused}
                 />
               </div>
             
@@ -475,9 +558,40 @@ const StudySessionPage: React.FC = () => {
       
       <QuizModal 
         isOpen={showQuiz} 
-        onClose={() => setShowQuiz(false)} 
+        onClose={handleQuizClose} 
         attentionScore={attentionScore}
+        sessionId={activeSession?.sessionId || ''}
+        subject={subject}
+        learningState={currentLearningState}
       />
+      
+      {/* Intervention Display */}
+      {currentIntervention && (
+        <motion.div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+        >
+          <motion.div 
+            className="bg-white rounded-3xl p-8 text-center max-w-md mx-4"
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+          >
+            <div className="bg-blue-100 rounded-full p-4 inline-flex mb-4">
+              <currentIntervention.icon size={32} className="text-blue-500" />
+            </div>
+            <h2 className="text-2xl font-bold mb-4">
+              {currentIntervention.type === 'hint' ? '💡 Helpful Hint!' : '☕ Break Time!'}
+            </h2>
+            <p className="text-lg text-gray-700 mb-6">
+              {currentIntervention.message}
+            </p>
+            <div className="text-sm text-gray-500">
+              {currentIntervention.type === 'hint' ? 'A quiz is coming next!' : 'Take a moment to refresh!'}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
       
       {sessionEnded && (
         <motion.div 

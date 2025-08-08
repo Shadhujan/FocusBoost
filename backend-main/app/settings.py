@@ -4,6 +4,10 @@ from functools import lru_cache
 from typing import Optional
 import json
 import os
+from dotenv import load_dotenv
+
+# Load .env file
+load_dotenv()
 
 class Settings(BaseSettings):
     # API Configuration
@@ -23,6 +27,9 @@ class Settings(BaseSettings):
     FIREBASE_CLIENT_ID: str = ""
     FIREBASE_CLIENT_CERT_URL: str = ""
 
+    # Gemini API Configuration (NEW)
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # Load Firebase credentials from JSON file
@@ -39,6 +46,17 @@ class Settings(BaseSettings):
             print("Warning: firebase-credentials.json not found")
         except json.JSONDecodeError:
             print("Warning: Invalid JSON in firebase-credentials.json")
+        
+        # # Load Gemini API key from environment or .env file
+        # if not self.GEMINI_API_KEY:
+        #     # Try to load from .env file if exists
+        #     env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
+        #     if os.path.exists(env_path):
+        #         with open(env_path, 'r') as f:
+        #             for line in f:
+        #                 if line.startswith('GEMINI_API_KEY='):
+        #                     self.GEMINI_API_KEY = line.split('=', 1)[1].strip()
+        #                     break
 
     class Config:
         case_sensitive = True

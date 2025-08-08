@@ -134,3 +134,37 @@ class ActiveSessionsResponse(BaseModel):
     success: bool
     activeSessions: List[StudySessionResponse]
     count: int
+
+# ===========================
+# QUIZ MANAGEMENT SCHEMAS
+# ===========================
+
+class QuizRequest(BaseModel):
+    sessionId: str
+    childId: str
+    subject: str
+    attentionScore: int  # 0-100
+    learningState: Optional[str] = "neutral"
+
+class QuizQuestion(BaseModel):
+    id: int
+    text: str
+    options: List[str]
+    correctAnswer: int
+    difficulty: str  # easy, medium, hard
+    explanation: Optional[str] = None
+
+class Quiz(BaseModel):
+    id: str
+    subject: str
+    questions: List[QuizQuestion]
+    totalQuestions: int
+    estimatedTime: int  # seconds
+    difficulty: str
+    xpReward: int
+
+class QuizResponse(BaseModel):
+    success: bool
+    # Accept any generated quiz shape (fallback or AI-generated)
+    quiz: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None

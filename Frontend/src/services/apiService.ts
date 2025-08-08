@@ -62,6 +62,39 @@ interface BackendResponse<T> {
 }
 
 // ===========================
+// QUIZ MANAGEMENT TYPES
+// ===========================
+
+interface QuizGenerateRequest {
+  childId: string;
+  sessionId: string;
+  subject: string;
+  attentionScore: number;
+  learningState?: string;
+}
+
+interface Quiz {
+  quiz_id: string;
+  question: string;
+  options: string[];
+  correct_index: number;
+  hint: string;
+  explanation: string;
+  fun_fact?: string;
+  xp_reward: number;
+  difficulty: string;
+}
+
+interface QuizSubmitRequest {
+  sessionId: string;
+  quizId: string;
+  selectedAnswer: number;
+  correctAnswer: number;
+  timeTaken: number;
+  xpReward: number;
+}
+
+// ===========================
 // SESSION MANAGEMENT TYPES
 // ===========================
 
@@ -137,6 +170,7 @@ interface MLAnalysisResult {
   };
   attentionScore: number;
   timestamp: number;
+  nextSampleInterval?: number; // seconds until next analysis
   intervention?: {
     needed: boolean;
     type: string;
@@ -363,6 +397,81 @@ class ApiService {
   }
 
   // ===========================
+  // QUIZ MANAGEMENT ENDPOINTS
+  // ===========================
+
+  // Generate quiz
+  async generateQuiz(data: QuizGenerateRequest): Promise<ApiResponse<{quiz: Quiz}>> {
+    try {
+      const response = await fetch(`${this.baseURL}/api/quiz/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.authToken ? { 'Authorization': `Bearer ${this.authToken}` } : {})
+        },
+        body: JSON.stringify({
+          ...data,
+          attentionScore: Math.round(data.attentionScore),
+          learningState: data.learningState || 'neutral'
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        console.error('Quiz generation failed:', result);
+        throw new Error(result.detail || JSON.stringify(result.detail) || 'Quiz generation failed');
+      }
+
+      // Normalize to always return { quiz }
+      const normalized = result && typeof result === 'object'
+        ? (result.quiz ? { quiz: result.quiz } : { quiz: result })
+        : { quiz: result };
+
+      return { success: true, data: normalized };
+    } catch (error) {
+      console.error('Quiz generation error:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to generate quiz' 
+      };
+    }
+  }
+
+  // Submit quiz answer
+  async submitQuizAnswer(data: QuizSubmitRequest): Promise<ApiResponse<any>> {
+    try {
+      const response = await fetch(`${this.baseURL}/api/quiz/submit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.authToken ? { 'Authorization': `Bearer ${this.authToken}` } : {})
+        },
+        body: JSON.stringify(data),
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.detail || 'Failed to submit answer');
+      }
+
+      return { success: true, data: result };
+    } catch (error) {
+      console.error('Quiz submission error:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to submit quiz answer' 
+      };
+    }
+  }
+
+  // Check quiz system status
+  async getQuizStatus(): Promise<ApiResponse<any>> {
+    return this.apiCall<any>('/api/quiz/status');
+  }
+
+  // ===========================
   // SESSION MANAGEMENT ENDPOINTS
   // ===========================
 
@@ -440,7 +549,24 @@ class ApiService {
     const queryString = params.toString();
     const url = `/api/sessions/child/${childId}${queryString ? `?${queryString}` : ''}`;
     
-    return this.apiCall(url);
+    const response = await this.apiCall<{
+      success: boolean;
+      sessions: StudySession[];
+      totalCount: number;
+    }>(url);
+    
+    // Handle the backend response structure
+    if (response.success && response.data) {
+      return {
+        success: true,
+        data: {
+          sessions: response.data.sessions,
+          totalCount: response.data.totalCount
+        }
+      };
+    }
+    
+    return response;
   }
 
   // Get session analytics for a child
@@ -451,7 +577,24 @@ class ApiService {
     analytics: SessionAnalytics;
     period: string;
   }>> {
-    return this.apiCall(`/api/sessions/child/${childId}/analytics?days=${days}`);
+    const response = await this.apiCall<{
+      success: boolean;
+      analytics: SessionAnalytics;
+      period: string;
+    }>(`/api/sessions/child/${childId}/analytics?days=${days}`);
+    
+    // Handle the backend response structure
+    if (response.success && response.data) {
+      return {
+        success: true,
+        data: {
+          analytics: response.data.analytics,
+          period: response.data.period
+        }
+      };
+    }
+    
+    return response;
   }
 
   // Get all active sessions (admin)
@@ -609,6 +752,9 @@ export type {
   ChildResponse,
   ChildUpdate,
   ApiResponse,
+  QuizGenerateRequest,
+  Quiz,
+  QuizSubmitRequest,
   SessionSettings,
   StudySession,
   SessionAnalytics,
