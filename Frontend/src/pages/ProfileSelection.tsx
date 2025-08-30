@@ -2,7 +2,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ChevronLeft, PlusCircle } from 'lucide-react';
+import { ChevronLeft} from 'lucide-react';
 import Logo from '../components/shared/Logo';
 import { useUser } from '../context/UserContext';
 import Header from '../components/shared/Header';

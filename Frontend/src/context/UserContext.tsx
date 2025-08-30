@@ -169,9 +169,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // ===========================
 
   const loadChildren = async (userId?: string): Promise<void> => {
-    // Use provided userId or fall back to current user
     const targetUserId = userId || user?.id;
-    
     if (!targetUserId) {
       console.warn('No user ID available for loading children');
       return;
@@ -182,14 +180,12 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       console.log('🔄 Loading children for parent:', targetUserId);
-      
       const result = await apiService.getChildrenByParent(targetUserId);
-      
+
       if (result.success && result.data) {
         const childrenData = result.data.children || [];
         console.log('✅ Children loaded:', childrenData.length, 'children');
-        
-        // Convert backend response to frontend format
+
         const formattedChildren: Child[] = childrenData.map((child: ChildResponse) => ({
           id: child.id,
           name: child.name,
@@ -199,10 +195,9 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
           seed: child.seed,
           createdAt: child.createdAt
         }));
-        
+
         setChildren(formattedChildren);
-        
-        // If no child is selected but we have children, select the first one
+
         if (!selectedChild && formattedChildren.length > 0) {
           setSelectedChild(formattedChildren[0]);
         }
