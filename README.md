@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Frontend
 This is the Frontend for the project.
 
@@ -26,12 +25,10 @@ Parent Key : 1234
 
 =======
 # FocusBoost
->>>>>>> 1586ae262f9cb9a3f74779dd32709b4c6b2bb0ca
 # Backend API
 
 This is the backend API for the project.
 
-<<<<<<< HEAD
 navigate to Backend folder:
 
 ## Setup
@@ -39,10 +36,7 @@ navigate to Backend folder:
 ### Create a conda or venv enviornment then activate it
 
 ### then install the dependencies
-=======
-## Setup
 
->>>>>>> 1586ae262f9cb9a3f74779dd32709b4c6b2bb0ca
 1. Install dependencies:
 ```bash
 pip install -r requirements.txt
@@ -56,7 +50,6 @@ fastapi dev app/main.py
 ## Project Structure
 
 - `app/` - Main application code
-<<<<<<< HEAD
   - `main.py` - Application entry point and API handlers
   - `settings.py` - Configuration settings
   - `user_account/` - User authentication and account management
@@ -69,9 +62,6 @@ fastapi dev app/main.py
 - `models/` - ML Models
 - `test/` - Unit and integration tests
 - `requirements.txt` - Python dependencies
-=======
-  - `main.py` - Application entry point
-  - `settings.py` - Configuration settings
   - `user_account/` - User authentication and account management
   - `account_schema/` - Account-related schemas
 - `docs/` - Documentation
