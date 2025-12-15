@@ -1,4 +1,5 @@
-# Frontend
+# FocusBoost
+## Frontend
 This is the Frontend for the project.
 
 navigate to frontend folder:
@@ -13,7 +14,7 @@ npm run dev
 ```
 
 
-# User credential to login and parent Key
+### User credential to login and parent Key
 
 use this key to login, so able to see charts properly with actual data.
 
@@ -22,10 +23,7 @@ password: Test@1234
 
 Parent Key : 1234
 
-
-=======
-# FocusBoost
-# Backend API
+## Backend API
 
 This is the backend API for the project.
 
@@ -67,4 +65,3 @@ fastapi dev app/main.py
 - `docs/` - Documentation
 -`models/` - ML Models
 - `requirements.txt` - Python dependencies 
->>>>>>> 1586ae262f9cb9a3f74779dd32709b4c6b2bb0ca
